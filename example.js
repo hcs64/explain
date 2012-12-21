@@ -294,11 +294,44 @@ render : function (canvasElement, context, t, dt) {
 
     context.clearRect(0, 0, w, h);
 
-    for (i = 0; i < arrows.length; i++) {
+    var drawArrow = function (arrow) {
+        var sx, sy;
+        var ex, ey;
+        var dx, dy;
+        var mag;
+        var head_ang = Math.PI/4;
+
+        sx = arrow.start.x;
+        sy = arrow.start.y;
+        ex = arrow.end.x;
+        ey = arrow.end.y;
+        dx = ex-sx;
+        dy = ey-sy;
+        mag = Math.sqrt(dx*dx+dy*dy);
+
+        if (mag == 0) {
+            dx = 0;
+            dy = 0;
+        }
+        else {
+            dx = -dx / mag * 10;
+            dy = -dy / mag * 10;
+        }
+        
         context.beginPath();
-        context.moveTo(arrows[i].start.x+0.5, arrows[i].start.y+0.5);
-        context.lineTo(arrows[i].end.x+0.5, arrows[i].end.y+0.5);
+        context.moveTo(sx+0.5, sy+0.5);
+        context.lineTo(ex+0.5, ey+0.5);
+
+        context.moveTo(ex+0.5-dy*Math.sin(head_ang)+dx*Math.cos(head_ang),
+                       ey+0.5+dx*Math.sin(head_ang)+dy*Math.cos(head_ang));
+        context.lineTo(ex+0.5, ey+0.5);
+        context.lineTo(ex+0.5-dy*Math.sin(-head_ang)+dx*Math.cos(-head_ang),
+                       ey+0.5+dx*Math.sin(-head_ang)+dy*Math.cos(-head_ang));
         context.stroke();
+    };
+
+    for (i = 0; i < arrows.length; i++) {
+        drawArrow(arrows[i]);
 
         arrows[i].start.y += dt/1000*100;
         arrows[i].end.y += dt/1000*100;
@@ -310,11 +343,14 @@ render : function (canvasElement, context, t, dt) {
         }
     }
 
+    // draw the currently-dragged arrow
     if ('start' in arrow) {
         context.beginPath();
         context.moveTo(arrow.start.x+0.5, arrow.start.y+0.5);
         context.lineTo(arrow.end.x+0.5, arrow.end.y+0.5);
-        context.stroke();
+
+        // arrowhead
+        drawArrow(arrow);
     }
 
     // keep runnning me
