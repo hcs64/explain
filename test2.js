@@ -50,8 +50,8 @@ function supports_html5_storage() {
     }
 }
 
+// on the recommendation of HTML5: Up and Running
 function getCursorPosition(el, ev) {
-    // on the recommendation of HTML5: Up and Running
     var x, y;
     if (ev.pageX != undefined && ev.pageY != undefined) {
         x = ev.pageX;
@@ -67,12 +67,9 @@ function getCursorPosition(el, ev) {
     return {x: x, y: y};
 }
 
-function drawDot(context, p) {
-    context.fillRect(p.x, p.y, 3, 3);
-}
-
 function initCanvas() {
     var arrow = {};
+    var arrows = [];
 
     if (!supports_canvas()) {
         return;
@@ -87,11 +84,31 @@ function initCanvas() {
     context = canvasElement.getContext("2d");
 
     var animationStartTime = Date.now();
+    var lastFrameTime = animationStartTime;
     var animateFcn = function (time) {
+        var i;
+        var dt = time-lastFrameTime;
+
         window.requestAnimationFrame(animateFcn);
+        lastFrameTime = time;
 
         context.clearRect(0, 0, kWidth, kHeight);
 
+        for (i = 0; i < arrows.length; i++) {
+            context.beginPath();
+            context.moveTo(arrows[i].start.x+0.5, arrows[i].start.y+0.5);
+            context.lineTo(arrows[i].end.x+0.5, arrows[i].end.y+0.5);
+            context.stroke();
+
+            arrows[i].start.y += dt/1000*100;
+            arrows[i].end.y += dt/1000*100;
+
+            if (arrows[i].start.y > kHeight && arrows[i].end.y > kHeight) {
+                var distdiff = Math.abs(arrows[i].end.y - arrows[i].start.y); 
+                arrows[i].start.y -= kHeight + distdiff;
+                arrows[i].end.y -= kHeight +   distdiff;
+            }
+        }
         if ('start' in arrow) {
             context.beginPath();
             context.moveTo(arrow.start.x+0.5, arrow.start.y+0.5);
@@ -109,7 +126,8 @@ function initCanvas() {
         },
         drop: function (p) {
             arrow.end = p;
-            //commitCurrentArrow(arrow, context);
+            arrows[arrows.length] = arrow;
+            arrow = {};
         }
     });
 
@@ -141,7 +159,7 @@ function initMouseEvents(canvasElement, fcnDict) {
     canvasElement.addEventListener("mousedown", function (e) {
         var old_dragging = dragging;
 
-        if (in_range && e.buttons == 1) {
+        if (in_range) {
             dragging = true;
         }
 
@@ -150,7 +168,7 @@ function initMouseEvents(canvasElement, fcnDict) {
     canvasElement.addEventListener("mouseup", function (e) {
         var old_dragging = dragging;
 
-        if (in_range && e.buttons == 1) {
+        if (in_range) {
             dragging = false;
         }
 
