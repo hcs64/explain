@@ -193,17 +193,287 @@ function addSimRenderer(backend, renderCanvasId, width, height) {
     window.requestAnimationFrame(animateFcn);
 }
 
+function AABB(_minx, _miny, _width, _height) {
+    this.minx = _minx;
+    this.miny = _miny;
+    this.maxx = _minx + _width;
+    this.maxy = _miny + _height
+    this.width = _width;
+    this.height = _height;
+
+    this.contains = function(p) {
+        return (p.x >= this.minx && p.y >= this.miny &&
+                p.x <  this.maxx && p.y <  this.maxy);
+    };
+    this.move = function(x,y) {
+        this.minx += x;
+        this.miny += y;
+        this.maxx += x;
+        this.maxy += y;
+    };
+}
+
+function constructButton(args) {
+    var text, callback, aabb;
+
+    var that;
+    
+    that = {};
+
+    text        = args.text;
+    aabb        = args.aabb;
+    callback    = args.callback;
+
+    that.contains = function(p) {
+        return aabb.contains(p);
+    };
+
+    that.click = function(p) {
+        callback(p);
+    };
+
+    that.render = function(context) {
+        context.fillStyle = "#000";
+        context.fillRect(aabb.minx, aabb.miny, aabb.width, aabb.height);
+
+        context.font = "bold 12px sans-serif";
+        context.fillStyle = "white";
+        context.textBaseline = "middle";
+        context.textAlign = "center";
+        context.fillText(text, aabb.minx+aabb.width/2, aabb.miny+aabb.height/2);
+    };
+
+    return that;
+}
+
+function constructIOArray() {
+    var i;
+    var a = [];
+    a.names = [];
+    a.indexes = {};
+
+    for (i = 0; i < arguments.length/2; i++) {
+        a.names[i] = arguments[i*2];
+        a.indexes[arguments[i*2]] = i;
+        a[i] = arguments[i*2+1];
+    }
+
+    return a;
+}
+
+function constructNode(title) {
+    var that;
+    var aabb, titleaabb;
+    var last_updated, update_in_progress;
+
+    aabb = new AABB(10,10,100,200);
+    titleaabb = new AABB(10,10,100,20);
+
+    that = {};
+    that.inputs = [];
+    that.outputs = [];
+    
+    that.render = function (context, t, dt) {
+        var i, input_name, output_name, y;
+
+        context.fillStyle = "black";
+        context.fillRect(aabb.minx, aabb.miny, aabb.width, aabb.height);
+
+        context.fillStyle = "white";
+        context.fillRect(aabb.minx+2, aabb.miny+2, aabb.width-4, 20);
+
+        context.fillStyle = "black";
+        context.font = "bold 12px sans-serif";
+        context.textBaseline = "middle";
+        context.textAlign = "center";
+        context.fillText(title, titleaabb.minx+titleaabb.width/2, titleaabb.miny+titleaabb.height/2);
+
+        for (i = 0; i < that.inputs.length; i++) {
+            input_name = that.inputs.names[i];
+            y = 30 + i*22;
+
+            context.fillStyle = "white";
+            context.fillRect(aabb.minx+2, aabb.miny+2+y, 40, 20);
+
+            context.fillStyle = "black";
+            context.font = "bold 12px sans-serif";
+            context.textBaseline = "top";
+            context.textAlign = "left";
+            context.fillText(input_name, aabb.minx+2, aabb.miny+2+y);
+        }
+
+        for (i = 0; i < that.outputs.length; i++) {
+            output_name = that.outputs.names[i];
+            y = 30 + i*22;
+
+            context.fillStyle = "white";
+            context.fillRect(aabb.maxx-2-40, aabb.miny+2+y, 40, 20);
+
+            context.fillStyle = "black";
+            context.font = "bold 12px sans-serif";
+            context.textBaseline = "top";
+            context.textAlign = "left";
+            context.fillText(output_name, aabb.maxx-2-40, aabb.miny+2+y);
+        }
+    };
+
+    that.checkDragHandle = function(p) {
+        return titleaabb.contains(p);
+    };
+
+    that.pickup = function(p) {
+        lastpos = p;
+    };
+
+    that.drag = function(p) {
+        aabb.move(p.x-lastpos.x, p.y-lastpos.y);
+        titleaabb.move(p.x-lastpos.x, p.y-lastpos.y);
+        lastpos = p;
+    };
+
+    that.drop = function(p) {
+        // nothin'
+    };
+
+    // dataflow handling
+    that.dependencies = [];
+    last_updated = -1;
+    update_in_progress = false;
+
+    that.addDependency = function(other_node) {
+        that.dependencies.push(other_node);
+    }
+
+    /*
+    clients = [];
+    that.addClient = function(other_node) {
+        that.clients.push(other_node);
+    }
+    */
+
+    that.isOutOfDate = function(new_stamp) {
+        if (last_updated < new_stamp) {
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    that.markUpdatePending = function() {
+        update_in_progress = true;
+    }
+
+    that.isUpdatePending = function() {
+        return update_in_progress;
+    }
+
+    that.markUpdated = function(new_stamp) {
+        last_updated = new_stamp;
+        update_in_progress = false;
+    }
+
+    return that;
+}
+
+function constructWaveNode() {
+    var that;
+    var super_render;
+
+    var amplitude = 50;
+
+    that = constructNode("wave!");
+
+    super_render = that.render;
+
+    that.render = function (context, t, dt) {
+        super_render(context, dt, dt);
+        context.fillStyle = "white";
+        context.font = "bold 12px sans-serif";
+        context.textBaseline = "middle";
+        context.textAlign = "center";
+    };
+
+    that.outputs = constructIOArray("osc", 0);
+    that.update = function (context, t, dt) {
+        that.outputs[osc] = Math.sin(t)*amplitude;
+    };
+
+    return that;
+}
+
+function constructImageNode() {
+    var that;
+    var super_render;
+
+    that = constructNode("image!");
+    
+    super_render = that.render;
+
+    that.render = function (context, t, dt) {
+        super_render (context, t, dt);
+
+        // imagine this is an image
+    };
+
+    var g = function(name) {return that.inputs[that.inputs.indexes[name]];};
+
+    that.update = function (context, t, dt) {
+        context.strokeStyle = g('color');
+        context.beginPath();
+        context.arc(g('x')+128, g('y')+128, g('scale')*30, 0, Math.PI*2, false);
+        context.closePath();
+        context.stroke();
+    };
+
+    that.inputs = constructIOArray("x", 0, "y", 0, "scale", 1.0, "color", "red");
+
+    return that;
+}
+
 // the pre-built backend, main execution environment
-function constBasicBackend() {
+function constructBasicBackend() {
 var that;
-var arrow;
+var buttons;
+var nodes;
+var pipes;
+var dragging;
+
+var active_pipe;
 
 that = {};
 
-arrow = {};
+dragging = null;
+active_pipe = {};
 
+buttons = [];
+nodes = [];
+pipes = [];
+
+buttons = [
+    constructButton({
+        text:   "wave",
+        aabb:   new AABB(0,100,50,50),
+        callback: function() {
+            nodes.push(constructWaveNode());
+        }
+    }),
+
+    constructButton({
+        text:   "image",
+        aabb:   new AABB(0,170,50,50),
+        callback: function() {
+            nodes.push(constructImageNode());
+        }
+    }),
+];
+
+nodes = [];
+pipes = [];
+
+
+/*
 // init arrows (load from localStorage if possible)
-var arrows = (function () {
+arrows = (function () {
     var arrows, arrowcount;
 
     if (!supports_html5_storage()) {
@@ -215,7 +485,6 @@ var arrows = (function () {
         arrowcount = 0;
     }
 
-    arrows = [];
 
     var parsePoints = function(s) {
         var a;
@@ -263,41 +532,65 @@ var resetArrows = function () {
     arrows = [];
     localStorage.clear();
 };
+*/
 
 // public methods
 that.mouseClick = function (p) {
-    if (p.x < 40 && p.y < 40) {
-        resetArrows();
-        return true;
-    } else {
-        return false;
+    var i;
+
+    // nodes are in front of buttons
+    for (i = nodes.length-1; i >= 0; i--) {
+        if (nodes[i].checkDragHandle(p)) {
+            return false;
+        }
     }
+
+    for (i = buttons.length-1; i >= 0; i--) {
+        if (buttons[i].contains(p)) {
+            buttons[i].click(p);
+            return true;
+        }
+    }
+
+    return false;
 };
 
 that.mousePickup = function (p) {
-    arrow = {start: p, end: p};
+    var i;
+    for (i = nodes.length-1; i >= 0; i--) {
+        if (nodes[i].checkDragHandle(p)) {
+            nodes[i].pickup(p);
+
+            dragging = nodes[i];
+            return true;
+        }
+    }
     return true;
 };
 
 that.mouseDrag = function (p) {
-    arrow.end = p;
+    if (!!dragging) {
+        dragging.drag(p);
+    }
     return true;
 };
 
 that.mouseDrop = function (p) {
-    arrow.end = p;
-    arrows[arrows.length] = arrow;
-    saveArrows();
-    arrow = {}
+    if (!!dragging) {
+        dragging.drop(p);
+        dragging = null;
+    }
     return true;
 };
 
 that.render = function(canvasElement, context, t, dt) {
     var w = canvasElement.width;
     var h = canvasElement.height;
+    var i;
 
     context.clearRect(0, 0, w, h);
 
+/*
     var drawArrow = function (arrow) {
         var sx, sy;
         var ex, ey;
@@ -352,6 +645,17 @@ that.render = function(canvasElement, context, t, dt) {
         // arrowhead
         drawArrow(arrow);
     }
+    */
+
+    // render buttons
+    for (i = 0; i < buttons.length; i++) {
+        buttons[i].render(context);
+    }
+
+    // render nodes
+    for (i = 0; i < nodes.length; i++) {
+        nodes[i].render(context, t, dt);
+    }
 
     // keep runnning me
     return true;
@@ -360,27 +664,45 @@ that.render = function(canvasElement, context, t, dt) {
 that.getInterpreter = function () {
     var interpreterBackend;
 
-    var scaledX = function (p) {
-        return p.x/640*256;
-    };
-    var scaledY = function (p) {
-        return p.y/480*256;
-    };
-    
     interpreterBackend = {}
 
-    // make a dummy interpreter for now
     interpreterBackend.render = function (canvasElement, context, t, dt) {
+        var node_queue = [];
+        var i, n, j, d, exploring_dependencies;
         context.clearRect(0, 0, 256, 256);
 
-        // render the last committed arrow
-        if (arrows.length >= 1) {
-            context.beginPath();
-            context.moveTo(scaledX(arrows[arrows.length-1].start),scaledY(arrows[arrows.length-1].start));
-            context.lineTo(scaledX(arrows[arrows.length-1].end),  scaledY(arrows[arrows.length-1].end));
-            context.stroke();
+        // TODO: should just compute an "update order" on every graph edit,
+        // that's kind of the point of this whole project
+
+        // first queue up those with no "output", these must be displaying something
+        for (i = 0; i < nodes.length; i++) {
+            if (nodes[i].outputs.length == 0) {
+                node_queue.push(nodes[i]);
+                nodes[i].markUpdatePending();
+            }
         }
 
+        while (node_queue.length > 0) {
+            dirty_dependencies = false;
+            n = node_queue.shift();
+            if (n.isOutOfDate(t)) {
+                for (j = 0; j < n.dependencies; j++) {
+                    d = n.dependencies[j];
+                    if (!d.isUpdatePending()) {
+                        exploring_dependencies = true;
+                        node_queue.push(d);
+                        d.markUpdatePending();
+                    }
+                }
+
+                if (exploring_dependencies) {
+                    node_queue.push(d);
+                } else {
+                    n.update(context, t, dt);
+                    n.markUpdated(t);
+                }
+            }
+        }
         return true;
     };
 
