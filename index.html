@@ -7,7 +7,12 @@
 </head>
 <body>
 <script>
-addSimRenderer(new BasicBackend(), "editor", 640, 480);
+(function(){
+var backend = new BasicBackend();
+
+addSimRenderer(backend, "editor", 640, 480);
+addSimRenderer(backend.getInterpreter(), "viewer", 256, 256);
+})();
 </script>
 </body>
 </html>

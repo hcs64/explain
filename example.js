@@ -260,6 +260,7 @@ var resetArrows = function () {
     localStorage.clear();
 };
 
+// public methods
 return {
 mouseClick : function (p) {
     if (p.x < 40 && p.y < 40) {
@@ -345,17 +346,42 @@ render : function (canvasElement, context, t, dt) {
 
     // draw the currently-dragged arrow
     if ('start' in arrow) {
-        context.beginPath();
-        context.moveTo(arrow.start.x+0.5, arrow.start.y+0.5);
-        context.lineTo(arrow.end.x+0.5, arrow.end.y+0.5);
-
         // arrowhead
         drawArrow(arrow);
     }
 
     // keep runnning me
     return true;
-}};
+},
+
+getInterpreter : function () {
+    var scaledX = function (p) {
+        return p.x/640*256;
+    };
+    var scaledY = function (p) {
+        return p.y/480*256;
+    };
+
+    // make a dummy interpreter for now
+    return { render: function (canvasElement, context, t, dt) {
+        
+        context.clearRect(0, 0, 256, 256);
+
+        // render the last committed arrow
+        if (arrows.length >= 1) {
+            context.beginPath();
+            context.moveTo(scaledX(arrows[arrows.length-1].start),scaledY(arrows[arrows.length-1].start));
+            context.lineTo(scaledX(arrows[arrows.length-1].end),  scaledY(arrows[arrows.length-1].end));
+            context.stroke();
+        }
+
+        return true;
+    }
+    
+    };
+}
+
+}; // end of public methods
 
 
-};
+}; // end of BasicBackend
