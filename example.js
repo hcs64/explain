@@ -322,7 +322,7 @@ function constructNode(title) {
             iobb = new AABB(x, aabb.miny+2+30+i*22, width, 20);
 
             if (iobb.contains(p)) {
-                return list.names[i];
+                return i;
             }
         }
         return null;
@@ -395,6 +395,7 @@ function constructWaveNode() {
     var super_render;
 
     var amplitude = 50;
+    var period = 100;
 
     that = constructNode("wave!");
 
@@ -412,7 +413,7 @@ function constructWaveNode() {
 
     that.outputs = constructIOArray("osc", 0);
     that.update = function (context, t, dt) {
-        gset("osc", Math.sin(t)*amplitude);
+        gset("osc", Math.sin(t/period)*amplitude);
     };
 
     return that;
@@ -432,7 +433,13 @@ function constructImageNode() {
         // imagine this is an image
     };
 
-    var g = function(name) {return that.inputs[that.inputs.indexes[name]];};
+    var g = function(name) {
+        var v = that.inputs[that.inputs.indexes[name]];
+        if (typeof v == 'function') {
+            return v();
+        }
+        return v;
+    };
 
     that.update = function (context, t, dt) {
         context.strokeStyle = g('color');
@@ -553,6 +560,10 @@ var resetArrows = function () {
 
 var connectNodes = function(source_node, source_idx, dest_node, dest_idx) {
     dest_node.addDependency(source_node);
+    window.console.log(dest_idx);
+    dest_node.inputs[dest_idx] = function () {
+        return source_node.outputs[source_idx];
+    };
 }
 
 var constructPipe = function (start_node, output_idx, start_point) {
@@ -577,7 +588,7 @@ var constructPipe = function (start_node, output_idx, start_point) {
         for (i = 0; i < nodes.length; i++) {
             if (nodes[i].contains(p)) {
                 input_idx = nodes[i].checkDragInput(p);
-                if (!!input_idx) {
+                if (input_idx !== null) {
                     end_node = nodes[i];
                     break;
                 }
@@ -680,7 +691,7 @@ that.mousePickup = function (p) {
                     return true;
                 }
                 endpoint = nodes[i].checkDragOutput(p);
-                if (!!endpoint) {
+                if (endpoint !== null) {
                     dragging = constructPipe(nodes[i], endpoint, p);
                     return true;
                 }
