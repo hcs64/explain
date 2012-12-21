@@ -1,3 +1,6 @@
+var kWidth = 640;
+var kHeight= 480;
+
 function supports_canvas() {
     return !!document.createElement('canvas').getContext;
 }
@@ -8,6 +11,36 @@ function supports_canvas_text() {
     var context = dummy_canvas.getContext('2d');
     return typeof context.fillText == 'function';
 }
+
+// http://paulirish.com/2011/requestanimationframe-for-smart-animating/
+// http://my.opera.com/emoller/blog/2011/12/20/requestanimationframe-for-smart-er-animating
+
+// requestAnimationFrame polyfill by Erik Möller
+// fixes from Paul Irish and Tino Zijdel
+(function() {
+    var lastTime = 0;
+    var vendors = ['ms', 'moz', 'webkit', 'o'];
+    for(var x = 0; x < vendors.length && !window.requestAnimationFrame; ++x) {
+        window.requestAnimationFrame = window[vendors[x]+'RequestAnimationFrame'];
+        window.cancelAnimationFrame = 
+          window[vendors[x]+'CancelAnimationFrame'] || window[vendors[x]+'CancelRequestAnimationFrame'];
+    }
+ 
+    if (!window.requestAnimationFrame)
+        window.requestAnimationFrame = function(callback, element) {
+            var currTime = new Date().getTime();
+            var timeToCall = Math.max(0, 16 - (currTime - lastTime));
+            var id = window.setTimeout(function() { callback(currTime + timeToCall); }, 
+              timeToCall);
+            lastTime = currTime + timeToCall;
+            return id;
+        };
+ 
+    if (!window.cancelAnimationFrame)
+        window.cancelAnimationFrame = function(id) {
+            clearTimeout(id);
+        };
+}());
 
 function supports_html5_storage() {
     try {
@@ -38,16 +71,6 @@ function drawDot(context, p) {
     context.fillRect(p.x, p.y, 3, 3);
 }
 
-var clearCanvas;
-
-function drawCurrentArrow(arrow, context) {
-    clearCanvas();
-    context.beginPath();
-    context.moveTo(arrow.start.x+0.5, arrow.start.y+0.5);
-    context.lineTo(arrow.end.x+0.5, arrow.end.y+0.5);
-    context.stroke();
-}
-
 function initCanvas() {
     var arrow = {};
 
@@ -58,23 +81,31 @@ function initCanvas() {
     var canvasElement = document.createElement("canvas");
     canvasElement.id = "test_canvas";
     document.body.appendChild(canvasElement);
-    canvasElement.width = 640;
-    canvasElement.height= 480;
-
-    clearCanvas = function () {
-        canvasElement.height = 480;
-    }
+    canvasElement.width = kWidth;
+    canvasElement.height= kHeight;
 
     context = canvasElement.getContext("2d");
+
+    var animationStartTime = Date.now();
+    var animateFcn = function (time) {
+        window.requestAnimationFrame(animateFcn);
+
+        context.clearRect(0, 0, kWidth, kHeight);
+
+        if ('start' in arrow) {
+            context.beginPath();
+            context.moveTo(arrow.start.x+0.5, arrow.start.y+0.5);
+            context.lineTo(arrow.end.x+0.5, arrow.end.y+0.5);
+            context.stroke();
+        }
+    }
 
     initMouseEvents(canvasElement, {
         drag: function (p) {
             arrow.end = p;
-            drawCurrentArrow(arrow, context);
         },
         pickup: function (p) {
             arrow = {start: p, end: p};
-            drawCurrentArrow(arrow, context);
         },
         drop: function (p) {
             arrow.end = p;
@@ -82,6 +113,8 @@ function initCanvas() {
         }
     });
 
+
+    window.requestAnimationFrame(animateFcn);
 }
 
 function initMouseEvents(canvasElement, fcnDict) {
