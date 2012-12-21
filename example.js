@@ -415,10 +415,10 @@ function constructWaveNode() {
         return v;
     };
 
-    that.inputs = constructIOArray("period", 1000, "amplitude", 50, "offset", 0);
+    that.inputs = constructIOArray("period", 1000, "amplitude", 50, "phase", 0, "offset", 0);
     that.outputs = constructIOArray("osc", 0);
     that.update = function (context, t, dt) {
-        gset("osc", Math.sin((t+g('offset'))/g('period')*Math.PI*2)*g('amplitude'));
+        gset("osc", Math.sin((t+g('phase'))/g('period')*Math.PI*2)*g('amplitude')+g('offset'));
     };
 
     return that;
@@ -492,6 +492,14 @@ buttons = [
         aabb:   new AABB(0,170,50,50),
         callback: function() {
             nodes.push(constructImageNode());
+        }
+    }),
+
+    constructButton({
+        text:   "dump",
+        aabb:   new AABB(0,240,50,50),
+        callback: function() {
+            JS_dump();
         }
     }),
 ];
@@ -650,7 +658,7 @@ var constructPipe = function (start_node, output_idx, start_point) {
     };
 
     return that;
-}
+};
 
 var promptForNumberInput = function(node, idx) {
     var prompt_element;
@@ -668,7 +676,10 @@ var promptForNumberInput = function(node, idx) {
     prompt_element.form.addEventListener("submit", listener, true);
 
     prompt_element.focus();
-}
+};
+
+var JS_dump = function (p) {
+};
 
 // public methods
 that.mouseClick = function (p) {
