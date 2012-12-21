@@ -2,17 +2,6 @@
 var kWidth = 640;
 var kHeight= 480;
 
-function supports_canvas() {
-    return !!document.createElement('canvas').getContext;
-}
-
-function supports_canvas_text() {
-    if (!supports_canvas()) { return false; }
-    var dummy_canvas = document.createElement('canvas');
-    var context = dummy_canvas.getContext('2d');
-    return typeof context.fillText == 'function';
-}
-
 // http://paulirish.com/2011/requestanimationframe-for-smart-animating/
 // http://my.opera.com/emoller/blog/2011/12/20/requestanimationframe-for-smart-er-animating
 
@@ -52,6 +41,17 @@ function supports_html5_storage() {
 }
 
 // on the recommendation of HTML5: Up and Running
+function supports_canvas() {
+    return !!document.createElement('canvas').getContext;
+}
+
+function supports_canvas_text() {
+    if (!supports_canvas()) { return false; }
+    var dummy_canvas = document.createElement('canvas');
+    var context = dummy_canvas.getContext('2d');
+    return typeof context.fillText == 'function';
+}
+
 function getCursorPosition(el, ev) {
     var x, y;
     if (ev.pageX != undefined && ev.pageY != undefined) {
@@ -134,7 +134,7 @@ function addSimRenderer(backend, renderCanvasId, width, height) {
     var lastFrameTime;
     var animateFcn;
 
-    if (!supports_canvas()) {
+    if (!supports_canvas_text()) {
         return;
     }
 
@@ -311,11 +311,11 @@ function constructNode(title) {
         return aabb.contains(p);
     };
 
-    that.checkDragTitle = function(p) {
+    that.checkHitTitle = function(p) {
         return titleaabb.contains(p);
     };
 
-    var checkDragIO = function(list, x, width, p) {
+    var checkHitIO = function(list, x, width, p) {
         var i, iobb;
 
         for (i = 0; i < list.length; i++) {
@@ -328,12 +328,12 @@ function constructNode(title) {
         return null;
     };
 
-    that.checkDragInput = function(p) {
-        return checkDragIO(this.inputs, aabb.minx+2, 40, p);
+    that.checkHitInput = function(p) {
+        return checkHitIO(this.inputs, aabb.minx+2, 40, p);
     };
     
-    that.checkDragOutput = function(p) {
-        return checkDragIO(this.outputs, aabb.maxx-2-40, 40, p);
+    that.checkHitOutput = function(p) {
+        return checkHitIO(this.outputs, aabb.maxx-2-40, 40, p);
     };
 
     that.pickup = function(p) {
@@ -394,9 +394,6 @@ function constructWaveNode() {
     var that;
     var super_render;
 
-    var amplitude = 50;
-    var period = 100;
-
     that = constructNode("wave!");
 
     super_render = that.render;
@@ -410,10 +407,18 @@ function constructWaveNode() {
     };
 
     var gset = function(name, value) {that.outputs[that.outputs.indexes[name]] = value;};
+    var g = function(name) {
+        var v = that.inputs[that.inputs.indexes[name]];
+        if (typeof v == 'function') {
+            return v();
+        }
+        return v;
+    };
 
+    that.inputs = constructIOArray("period", 1000, "amplitude", 50, "offset", 0);
     that.outputs = constructIOArray("osc", 0);
     that.update = function (context, t, dt) {
-        gset("osc", Math.sin(t/period)*amplitude);
+        gset("osc", Math.sin((t+g('offset'))/g('period')*Math.PI*2)*g('amplitude'));
     };
 
     return that;
@@ -455,7 +460,7 @@ function constructImageNode() {
 }
 
 // the pre-built backend, main execution environment
-function constructBasicBackend() {
+function constructBasicBackend(prompt_id) {
 var that;
 var buttons;
 var nodes;
@@ -560,7 +565,6 @@ var resetArrows = function () {
 
 var connectNodes = function(source_node, source_idx, dest_node, dest_idx) {
     dest_node.addDependency(source_node);
-    window.console.log(dest_idx);
     dest_node.inputs[dest_idx] = function () {
         return source_node.outputs[source_idx];
     };
@@ -578,6 +582,8 @@ var constructPipe = function (start_node, output_idx, start_point) {
 
     that.drag = function (p) {
         current_point = p;
+
+        // TODO: would be nice to preview, but we'll need detach
     }
 
     that.drop = function (p) {
@@ -587,7 +593,7 @@ var constructPipe = function (start_node, output_idx, start_point) {
         current_point = p;
         for (i = 0; i < nodes.length; i++) {
             if (nodes[i].contains(p)) {
-                input_idx = nodes[i].checkDragInput(p);
+                input_idx = nodes[i].checkHitInput(p);
                 if (input_idx !== null) {
                     end_node = nodes[i];
                     break;
@@ -627,6 +633,7 @@ var constructPipe = function (start_node, output_idx, start_point) {
                 dy = -dy / mag * 10;
             }
             
+            context.strokeStyle = "blue";
             context.beginPath();
             context.moveTo(sx+0.5, sy+0.5);
             context.lineTo(ex+0.5, ey+0.5);
@@ -645,13 +652,42 @@ var constructPipe = function (start_node, output_idx, start_point) {
     return that;
 }
 
+var promptForNumberInput = function(node, idx) {
+    var prompt_element;
+    var listener;
+    
+    prompt_element = document.getElementById(prompt_id);
+
+    prompt_element.value = node.inputs[idx];
+
+    listener = function () {
+        node.inputs[idx] = parseFloat(prompt_element.value);
+        prompt_element.form.removeEventListener("submit", listener, true);
+        return false;
+    };
+    prompt_element.form.addEventListener("submit", listener, true);
+
+    prompt_element.focus();
+}
+
 // public methods
 that.mouseClick = function (p) {
-    var i;
+    var i, endpoint;
 
     // nodes are in front of buttons
     for (i = nodes.length-1; i >= 0; i--) {
         if (nodes[i].contains(p)) {
+
+            endpoint = nodes[i].checkHitInput(p);
+            if (endpoint !== null) {
+                // clicked on an input, we may be able to set it
+
+                if (typeof nodes[i].inputs[endpoint] == 'number') {
+                    promptForNumberInput(nodes[i], endpoint);
+                    return false;
+                }
+            }
+            // node still captures click
             return false;
         }
     }
@@ -675,22 +711,19 @@ that.mousePickup = function (p) {
         dragging = null;
     }
 
+    // drag nodes around
     for (i = nodes.length-1; i >= 0; i--) {
         if (nodes[i].contains(p)) {
-            if (nodes[i].checkDragTitle(p)) {
+            if (nodes[i].checkHitTitle(p)) {
+                // drag a node by its titlebar
                 nodes[i].pickup(p);
 
                 dragging = nodes[i];
                 return true;
             }
             else {
-                endpoint = nodes[i].checkDragInput(p);
-                if (!!endpoint) {
-                    //dragging = constructPipe(p);
-                    window.console.log("pickup input "+endpoint);
-                    return true;
-                }
-                endpoint = nodes[i].checkDragOutput(p);
+                // drag from outputs to make pipes
+                endpoint = nodes[i].checkHitOutput(p);
                 if (endpoint !== null) {
                     dragging = constructPipe(nodes[i], endpoint, p);
                     return true;

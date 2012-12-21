@@ -6,12 +6,16 @@
     <script src="example.js"></script>
 </head>
 <body>
+<div>
+<form onSubmit="return false;">
+<input id="prompt">
+</div>
 <script>
 (function(){
-var backend = new constructBasicBackend();
+var backend = new constructBasicBackend("prompt");
 
 addSimRenderer(backend, "editor", 640, 480);
-addSimRenderer(backend.getInterpreter(), "viewer", 256, 256);
+addSimRenderer(backend.getInterpreter(), "viewer", 256, 256, null);
 })();
 </script>
 </body>
