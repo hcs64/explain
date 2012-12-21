@@ -38,7 +38,19 @@ function drawDot(context, p) {
     context.fillRect(p.x, p.y, 3, 3);
 }
 
+var clearCanvas;
+
+function drawCurrentArrow(arrow, context) {
+    clearCanvas();
+    context.beginPath();
+    context.moveTo(arrow.start.x+0.5, arrow.start.y+0.5);
+    context.lineTo(arrow.end.x+0.5, arrow.end.y+0.5);
+    context.stroke();
+}
+
 function initCanvas() {
+    var arrow = {};
+
     if (!supports_canvas()) {
         return;
     }
@@ -49,22 +61,24 @@ function initCanvas() {
     canvasElement.width = 640;
     canvasElement.height= 480;
 
+    clearCanvas = function () {
+        canvasElement.height = 480;
+    }
+
     context = canvasElement.getContext("2d");
 
     initMouseEvents(canvasElement, {
         drag: function (p) {
-            context.fillStyle="black";
-            drawDot(context, p);
+            arrow.end = p;
+            drawCurrentArrow(arrow, context);
         },
         pickup: function (p) {
-            window.console.log("pickup");
-            context.fillStyle="green";
-            drawDot(context, p);
+            arrow = {start: p, end: p};
+            drawCurrentArrow(arrow, context);
         },
         drop: function (p) {
-            window.console.log("drop");
-            context.fillStyle="red";
-            drawDot(context, p);
+            arrow.end = p;
+            //commitCurrentArrow(arrow, context);
         }
     });
 
