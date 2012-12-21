@@ -194,9 +194,13 @@ function addSimRenderer(backend, renderCanvasId, width, height) {
 }
 
 // the pre-built backend, main execution environment
-function BasicBackend() {
+function constBasicBackend() {
+var that;
+var arrow;
 
-var arrow = {}
+that = {};
+
+arrow = {};
 
 // init arrows (load from localStorage if possible)
 var arrows = (function () {
@@ -261,35 +265,34 @@ var resetArrows = function () {
 };
 
 // public methods
-return {
-mouseClick : function (p) {
+that.mouseClick = function (p) {
     if (p.x < 40 && p.y < 40) {
         resetArrows();
         return true;
     } else {
         return false;
     }
-},
+};
 
-mousePickup : function (p) {
+that.mousePickup = function (p) {
     arrow = {start: p, end: p};
     return true;
-},
+};
 
-mouseDrag : function (p) {
+that.mouseDrag = function (p) {
     arrow.end = p;
     return true;
-},
+};
 
-mouseDrop : function (p) {
+that.mouseDrop = function (p) {
     arrow.end = p;
     arrows[arrows.length] = arrow;
     saveArrows();
     arrow = {}
     return true;
-},
+};
 
-render : function (canvasElement, context, t, dt) {
+that.render = function(canvasElement, context, t, dt) {
     var w = canvasElement.width;
     var h = canvasElement.height;
 
@@ -352,19 +355,22 @@ render : function (canvasElement, context, t, dt) {
 
     // keep runnning me
     return true;
-},
+};
 
-getInterpreter : function () {
+that.getInterpreter = function () {
+    var interpreterBackend;
+
     var scaledX = function (p) {
         return p.x/640*256;
     };
     var scaledY = function (p) {
         return p.y/480*256;
     };
+    
+    interpreterBackend = {}
 
     // make a dummy interpreter for now
-    return { render: function (canvasElement, context, t, dt) {
-        
+    interpreterBackend.render = function (canvasElement, context, t, dt) {
         context.clearRect(0, 0, 256, 256);
 
         // render the last committed arrow
@@ -376,12 +382,11 @@ getInterpreter : function () {
         }
 
         return true;
-    }
-    
     };
-}
 
-}; // end of public methods
+    return interpreterBackend;
+};
 
+return that;
 
 }; // end of BasicBackend
