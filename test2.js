@@ -67,13 +67,71 @@ function getCursorPosition(el, ev) {
     return {x: x, y: y};
 }
 
+function saveArrows(arrows) {
+    var i;
+
+    if (!supports_html5_storage()) {
+        return;
+    }
+
+    localStorage["test.arrowcount"] = arrows.length;
+
+    for (i = 0; i < arrows.length; i++) {
+        localStorage["test.arrow"+i] = arrows[i].start.x +"," + arrows[i].start.y + "," + arrows[i].end.x + "," + arrows[i].end.y;
+    }
+}
+
+function loadArrows() {
+    var arrows, arrowcount;
+
+    if (!supports_html5_storage()) {
+        return {};
+    }
+
+    arrowcount = parseInt(localStorage["test.arrowcount"]);
+    if (isNaN(arrowcount)) {
+        arrowcount = 0;
+    }
+
+    arrows = [];
+
+    var parsePoints = function(s) {
+        var a;
+        if (typeof s != 'string') {
+            return {};
+        }
+        
+        a = s.split(',');
+        if (a.length != 4) {
+            return {};
+        }
+
+        return {start: {x: parseInt(a[0]),
+                        y: parseInt(a[1])},
+                  end: {x: parseInt(a[2]),
+                        y: parseInt(a[3])}};
+    };
+
+    for (i = 0; i < arrowcount; i++) {
+        arrows[i] = parsePoints(localStorage["test.arrow"+i]);
+        window.console.log(localStorage["test.arrow"+i]);
+        if (!('start' in arrows[i])) {
+            return {};
+        }
+    }
+
+    return arrows;
+}
+
 function initCanvas() {
     var arrow = {};
-    var arrows = [];
+    var arrows ;
 
     if (!supports_canvas()) {
         return;
     }
+
+    arrows = loadArrows();
 
     var canvasElement = document.createElement("canvas");
     canvasElement.id = "test_canvas";
@@ -109,6 +167,7 @@ function initCanvas() {
                 arrows[i].end.y -= kHeight +   distdiff;
             }
         }
+
         if ('start' in arrow) {
             context.beginPath();
             context.moveTo(arrow.start.x+0.5, arrow.start.y+0.5);
@@ -128,6 +187,8 @@ function initCanvas() {
             arrow.end = p;
             arrows[arrows.length] = arrow;
             arrow = {};
+
+            saveArrows(arrows);
         }
     });
 
