@@ -274,13 +274,11 @@ function constructNode(title) {
     that.outputs = [];
     
     that.render = function (context, t, dt) {
-        var i, input_name, output_name, y;
-
         context.fillStyle = "black";
         context.fillRect(aabb.minx, aabb.miny, aabb.width, aabb.height);
 
         context.fillStyle = "white";
-        context.fillRect(aabb.minx+2, aabb.miny+2, aabb.width-4, 20);
+        context.fillRect(titleaabb.minx+2, titleaabb.miny+2, titleaabb.width-4, titleaabb.height-4);
 
         context.fillStyle = "black";
         context.font = "bold 12px sans-serif";
@@ -288,37 +286,54 @@ function constructNode(title) {
         context.textAlign = "center";
         context.fillText(title, titleaabb.minx+titleaabb.width/2, titleaabb.miny+titleaabb.height/2);
 
-        for (i = 0; i < that.inputs.length; i++) {
-            input_name = that.inputs.names[i];
+        drawIO(context, that.inputs, aabb.minx+2, 40);
+        drawIO(context, that.outputs, aabb.maxx-2-40, 40);
+    };
+
+    var drawIO = function(context, list, x, width) {
+        var i, name;
+        for (i = 0; i < list.length; i++) {
+            name = list.names[i];
             y = 30 + i*22;
 
             context.fillStyle = "white";
-            context.fillRect(aabb.minx+2, aabb.miny+2+y, 40, 20);
+            context.fillRect(x, aabb.miny+2+y, width, 20);
 
             context.fillStyle = "black";
             context.font = "bold 12px sans-serif";
             context.textBaseline = "top";
             context.textAlign = "left";
-            context.fillText(input_name, aabb.minx+2, aabb.miny+2+y);
-        }
-
-        for (i = 0; i < that.outputs.length; i++) {
-            output_name = that.outputs.names[i];
-            y = 30 + i*22;
-
-            context.fillStyle = "white";
-            context.fillRect(aabb.maxx-2-40, aabb.miny+2+y, 40, 20);
-
-            context.fillStyle = "black";
-            context.font = "bold 12px sans-serif";
-            context.textBaseline = "top";
-            context.textAlign = "left";
-            context.fillText(output_name, aabb.maxx-2-40, aabb.miny+2+y);
+            context.fillText(name, x, aabb.miny+2+y);
         }
     };
 
-    that.checkDragHandle = function(p) {
+    that.contains = function(p) {
+        return aabb.contains(p);
+    };
+
+    that.checkDragTitle = function(p) {
         return titleaabb.contains(p);
+    };
+
+    var checkDragIO = function(list, x, width, p) {
+        var i, iobb;
+
+        for (i = 0; i < list.length; i++) {
+            iobb = new AABB(x, aabb.miny+2+30+i*22, width, 20);
+
+            if (iobb.contains(p)) {
+                return list.names[i];
+            }
+        }
+        return null;
+    };
+
+    that.checkDragInput = function(p) {
+        return checkDragIO(this.inputs, aabb.minx+2, 40, p);
+    };
+    
+    that.checkDragOutput = function(p) {
+        return checkDragIO(this.outputs, aabb.maxx-2-40, 40, p);
     };
 
     that.pickup = function(p) {
@@ -342,7 +357,7 @@ function constructNode(title) {
 
     that.addDependency = function(other_node) {
         that.dependencies.push(other_node);
-    }
+    };
 
     /*
     clients = [];
@@ -357,20 +372,20 @@ function constructNode(title) {
         } else {
             return false;
         }
-    }
+    };
 
     that.markUpdatePending = function() {
         update_in_progress = true;
-    }
+    };
 
     that.isUpdatePending = function() {
         return update_in_progress;
-    }
+    };
 
     that.markUpdated = function(new_stamp) {
         last_updated = new_stamp;
         update_in_progress = false;
-    }
+    };
 
     return that;
 }
@@ -393,9 +408,11 @@ function constructWaveNode() {
         context.textAlign = "center";
     };
 
+    var gset = function(name, value) {that.outputs[that.outputs.indexes[name]] = value;};
+
     that.outputs = constructIOArray("osc", 0);
     that.update = function (context, t, dt) {
-        that.outputs[osc] = Math.sin(t)*amplitude;
+        gset("osc", Math.sin(t)*amplitude);
     };
 
     return that;
@@ -534,13 +551,96 @@ var resetArrows = function () {
 };
 */
 
+var connectNodes = function(source_node, source_idx, dest_node, dest_idx) {
+    dest_node.addDependency(source_node);
+}
+
+var constructPipe = function (start_node, output_idx, start_point) {
+    var that;
+    var current_point;
+    var end_node;
+    var input_idx;
+    
+    that = {};
+
+    current_point = start_point;
+
+    that.drag = function (p) {
+        current_point = p;
+    }
+
+    that.drop = function (p) {
+        var i;
+        end_node = null;
+
+        current_point = p;
+        for (i = 0; i < nodes.length; i++) {
+            if (nodes[i].contains(p)) {
+                input_idx = nodes[i].checkDragInput(p);
+                if (!!input_idx) {
+                    end_node = nodes[i];
+                    break;
+                }
+            }
+        }
+
+        if (!!end_node) {
+            pipes.push(that);
+
+            connectNodes(start_node, output_idx, end_node, input_idx);
+        }
+    }
+
+    that.render = function (context) {
+        var drawArrow = function (arrow) {
+            var sx, sy;
+            var ex, ey;
+            var dx, dy;
+            var mag;
+            var head_ang = Math.PI/4;
+
+            sx = arrow.start.x;
+            sy = arrow.start.y;
+            ex = arrow.end.x;
+            ey = arrow.end.y;
+            dx = ex-sx;
+            dy = ey-sy;
+            mag = Math.sqrt(dx*dx+dy*dy);
+
+            if (mag == 0) {
+                dx = 0;
+                dy = 0;
+            }
+            else {
+                dx = -dx / mag * 10;
+                dy = -dy / mag * 10;
+            }
+            
+            context.beginPath();
+            context.moveTo(sx+0.5, sy+0.5);
+            context.lineTo(ex+0.5, ey+0.5);
+
+            context.moveTo(ex+0.5-dy*Math.sin(head_ang)+dx*Math.cos(head_ang),
+                           ey+0.5+dx*Math.sin(head_ang)+dy*Math.cos(head_ang));
+            context.lineTo(ex+0.5, ey+0.5);
+            context.lineTo(ex+0.5-dy*Math.sin(-head_ang)+dx*Math.cos(-head_ang),
+                           ey+0.5+dx*Math.sin(-head_ang)+dy*Math.cos(-head_ang));
+            context.stroke();
+        };
+
+        drawArrow({start: start_point, end: current_point});
+    };
+
+    return that;
+}
+
 // public methods
 that.mouseClick = function (p) {
     var i;
 
     // nodes are in front of buttons
     for (i = nodes.length-1; i >= 0; i--) {
-        if (nodes[i].checkDragHandle(p)) {
+        if (nodes[i].contains(p)) {
             return false;
         }
     }
@@ -556,13 +656,35 @@ that.mouseClick = function (p) {
 };
 
 that.mousePickup = function (p) {
-    var i;
-    for (i = nodes.length-1; i >= 0; i--) {
-        if (nodes[i].checkDragHandle(p)) {
-            nodes[i].pickup(p);
+    var i, endpoint;
 
-            dragging = nodes[i];
-            return true;
+    if (!!dragging) {
+        window.console.log("had to drop something already being dragged on pickup");
+        dragging.drop(p);
+        dragging = null;
+    }
+
+    for (i = nodes.length-1; i >= 0; i--) {
+        if (nodes[i].contains(p)) {
+            if (nodes[i].checkDragTitle(p)) {
+                nodes[i].pickup(p);
+
+                dragging = nodes[i];
+                return true;
+            }
+            else {
+                endpoint = nodes[i].checkDragInput(p);
+                if (!!endpoint) {
+                    //dragging = constructPipe(p);
+                    window.console.log("pickup input "+endpoint);
+                    return true;
+                }
+                endpoint = nodes[i].checkDragOutput(p);
+                if (!!endpoint) {
+                    dragging = constructPipe(nodes[i], endpoint, p);
+                    return true;
+                }
+            }
         }
     }
     return true;
@@ -578,8 +700,8 @@ that.mouseDrag = function (p) {
 that.mouseDrop = function (p) {
     if (!!dragging) {
         dragging.drop(p);
-        dragging = null;
     }
+    dragging = null;
     return true;
 };
 
@@ -590,43 +712,7 @@ that.render = function(canvasElement, context, t, dt) {
 
     context.clearRect(0, 0, w, h);
 
-/*
-    var drawArrow = function (arrow) {
-        var sx, sy;
-        var ex, ey;
-        var dx, dy;
-        var mag;
-        var head_ang = Math.PI/4;
-
-        sx = arrow.start.x;
-        sy = arrow.start.y;
-        ex = arrow.end.x;
-        ey = arrow.end.y;
-        dx = ex-sx;
-        dy = ey-sy;
-        mag = Math.sqrt(dx*dx+dy*dy);
-
-        if (mag == 0) {
-            dx = 0;
-            dy = 0;
-        }
-        else {
-            dx = -dx / mag * 10;
-            dy = -dy / mag * 10;
-        }
-        
-        context.beginPath();
-        context.moveTo(sx+0.5, sy+0.5);
-        context.lineTo(ex+0.5, ey+0.5);
-
-        context.moveTo(ex+0.5-dy*Math.sin(head_ang)+dx*Math.cos(head_ang),
-                       ey+0.5+dx*Math.sin(head_ang)+dy*Math.cos(head_ang));
-        context.lineTo(ex+0.5, ey+0.5);
-        context.lineTo(ex+0.5-dy*Math.sin(-head_ang)+dx*Math.cos(-head_ang),
-                       ey+0.5+dx*Math.sin(-head_ang)+dy*Math.cos(-head_ang));
-        context.stroke();
-    };
-
+    /*
     for (i = 0; i < arrows.length; i++) {
         drawArrow(arrows[i]);
 
@@ -657,6 +743,17 @@ that.render = function(canvasElement, context, t, dt) {
         nodes[i].render(context, t, dt);
     }
 
+    // render pipes
+    for (i = 0; i < pipes.length; i++) {
+        pipes[i].render(context);
+    }
+
+    // highest priority: current dragster (could be redundant)
+    if (!!dragging && 'render' in dragging && typeof dragging.render == 'function') {
+        dragging.render(context, t, dt);
+    }
+
+
     // keep runnning me
     return true;
 };
@@ -664,39 +761,40 @@ that.render = function(canvasElement, context, t, dt) {
 that.getInterpreter = function () {
     var interpreterBackend;
 
-    interpreterBackend = {}
+    interpreterBackend = {};
 
     interpreterBackend.render = function (canvasElement, context, t, dt) {
-        var node_queue = [];
+        var node_queue;
         var i, n, j, d, exploring_dependencies;
         context.clearRect(0, 0, 256, 256);
 
-        // TODO: should just compute an "update order" on every graph edit,
+        // TODO: should just compute update order once every graph edit,
         // that's kind of the point of this whole project
 
         // first queue up those with no "output", these must be displaying something
+        node_queue = []
         for (i = 0; i < nodes.length; i++) {
             if (nodes[i].outputs.length == 0) {
-                node_queue.push(nodes[i]);
                 nodes[i].markUpdatePending();
+                node_queue.push(nodes[i]);
             }
         }
 
         while (node_queue.length > 0) {
-            dirty_dependencies = false;
+            exploring_dependencies = false;
             n = node_queue.shift();
             if (n.isOutOfDate(t)) {
-                for (j = 0; j < n.dependencies; j++) {
+                for (j = 0; j < n.dependencies.length; j++) {
                     d = n.dependencies[j];
-                    if (!d.isUpdatePending()) {
+                    if (d.isOutOfDate(t) && !d.isUpdatePending()) {
                         exploring_dependencies = true;
-                        node_queue.push(d);
                         d.markUpdatePending();
+                        node_queue.push(d);
                     }
                 }
 
                 if (exploring_dependencies) {
-                    node_queue.push(d);
+                    node_queue.push(n);
                 } else {
                     n.update(context, t, dt);
                     n.markUpdated(t);
