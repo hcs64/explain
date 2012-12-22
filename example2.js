@@ -75,6 +75,7 @@ function initMouseEvents(canvasElement, callbacks) {
     }, false);
 }
 
+//
 function addSimRenderer(backend, renderCanvasId, width, height) {
     var canvasElement;
     var renderContext;
@@ -139,6 +140,13 @@ var boundingBoxProto = {
     moveBy: function(x,y) {
         this.moveTo(this.minx+x, this.miny+y);
     },
+
+    getMinX: function() { return this.minx; },
+    getMinY: function() { return this.miny; },
+    getMaxX: function() { return this.maxx; },
+    getMaxY: function() { return this.maxy; },
+    getMidX: function() { return this.minx+this.width/2; },
+    getMidY: function() { return this.miny+this.height/2; },
 };
 
 function constructBB(minx, miny, width, height) {
@@ -154,6 +162,55 @@ function constructBB(minx, miny, width, height) {
     return obj;
 }
 
+var relativeBoundingBoxProto = {
+    contains: function(p) {
+        this.updateBounds();
+        return (p.x >= this.minx && p.y >= this.miny &&
+                p.x <= this.maxx && p.y <= this.maxy);
+    },
+
+    updateBounds: function() {
+        var minx, miny;
+        minx = this.relative_to.getMinX();
+        miny = this.relative_to.getMinY();
+
+        this.minx = minx + this.dx;
+        this.miny = miny + this.dy;
+        this.maxx = minx + this.dx + this.width;
+        this.maxy = miny + this.dy + this.height;
+    },
+
+    moveBy: function(x,y) {
+        this.dx += x;
+        this.dy += y;
+
+        this.updateBounds();
+    },
+
+    getMinX: function() { this.updateBounds(); return this.minx; },
+    getMinY: function() { this.updateBounds(); return this.miny; },
+    getMaxX: function() { this.updateBounds(); return this.maxx; },
+    getMaxY: function() { this.updateBounds(); return this.maxy; },
+    getMidX: function() { this.updateBounds(); return this.minx+this.width/2; },
+    getMidY: function() { this.updateBounds(); return this.miny+this.height/2; },
+};
+
+function constructRelativeBB(relative_to, dx, dy, width, height) {
+    var F = function(){};
+    F.prototype = relativeBoundingBoxProto;
+    obj = new F;
+
+    obj.relative_to = relative_to;
+    obj.dx = dx;
+    obj.dy = dy;
+    obj.width = width;
+    obj.height = height;
+    obj.updateBounds();
+
+    return obj;
+}
+
+//
 function constructButton(args) {
     var text, callback, bb;
 
@@ -187,16 +244,22 @@ function constructButton(args) {
     return that;
 }
 
-function constructIOArray() {
-    var i;
+//
+function constructIOArray(parent_bb, x, y, w, h) {
+    var i, j;
+    var first_arg = 5;  // 5 fixed args
     var a = [];
     a.names = [];
+    a.bounds = [];
     a.indexes = {};
 
-    for (i = 0; i < arguments.length/2; i++) {
-        a.names[i] = arguments[i*2];
-        a.indexes[arguments[i*2]] = i;
-        a[i] = arguments[i*2+1];
+    for (i = 0; i < (arguments.length-first_arg)/2; i++) {
+        j = i*2 + first_arg;
+        a.names[i] = arguments[j];
+        a.indexes[arguments[j]] = i;
+        a.bounds[i] = constructRelativeBB(parent_bb, x, y+h*i, w, h);
+
+        a[i] = arguments[j+1];
     }
 
     return a;
@@ -208,11 +271,13 @@ function constructNode(title) {
     var last_updated, update_in_progress;
 
     bb = constructBB(10,10,100,200);
-    title_bb = constructBB(10,10,100,20);
+    title_bb = constructRelativeBB(bb, 0, 0, 100, 20);
 
     that = {};
     that.inputs = [];
     that.outputs = [];
+
+    that.bb = bb;
     
     that.render = function (context, t, dt) {
         context.fillStyle = "black";
@@ -225,6 +290,7 @@ function constructNode(title) {
         context.font = "bold 12px sans-serif";
         context.textBaseline = "middle";
         context.textAlign = "center";
+        title_bb.updateBounds();
         context.fillText(title, title_bb.minx+title_bb.width/2, title_bb.miny+title_bb.height/2);
 
         drawIO(context, that.inputs, bb.minx+2, 40);
@@ -232,19 +298,21 @@ function constructNode(title) {
     };
 
     var drawIO = function(context, list, x, width) {
-        var i, name;
+        var i, name, iobb;
         for (i = 0; i < list.length; i++) {
             name = list.names[i];
-            y = 30 + i*22;
+            iobb = list.bounds[i];
+
+            iobb.updateBounds();
 
             context.fillStyle = "white";
-            context.fillRect(x, bb.miny+2+y, width, 20);
+            context.fillRect(iobb.minx+2, iobb.miny+2, iobb.width-4, iobb.height-4);
 
             context.fillStyle = "black";
             context.font = "bold 12px sans-serif";
             context.textBaseline = "top";
             context.textAlign = "left";
-            context.fillText(name, x, bb.miny+2+y);
+            context.fillText(name, iobb.minx+2, iobb.miny+2);
         }
     };
 
@@ -256,13 +324,11 @@ function constructNode(title) {
         return title_bb.contains(p);
     };
 
-    var checkHitIO = function(list, x, width, p) {
-        var i, iobb;
+    var checkHitIO = function(list, p) {
+        var i;
 
         for (i = 0; i < list.length; i++) {
-            iobb = constructBB(x, bb.miny+2+30+i*22, width, 20);
-
-            if (iobb.contains(p)) {
+            if (list.bounds[i].contains(p)) {
                 return i;
             }
         }
@@ -270,11 +336,11 @@ function constructNode(title) {
     };
 
     that.checkHitInput = function(p) {
-        return checkHitIO(this.inputs, bb.minx+2, 40, p);
+        return checkHitIO(this.inputs, p);
     };
     
     that.checkHitOutput = function(p) {
-        return checkHitIO(this.outputs, bb.maxx-2-40, 40, p);
+        return checkHitIO(this.outputs, p);
     };
 
     that.pickup = function(p) {
@@ -283,7 +349,6 @@ function constructNode(title) {
 
     that.drag = function(p) {
         bb.moveBy(p.x-lastpos.x, p.y-lastpos.y);
-        title_bb.moveBy(p.x-lastpos.x, p.y-lastpos.y);
         lastpos = p;
     };
 
@@ -356,8 +421,10 @@ function constructWaveNode() {
         return v;
     };
 
-    that.inputs = constructIOArray("period", 1000, "amplitude", 50, "phase", 0, "offset", 0);
-    that.outputs = constructIOArray("osc", 0);
+    that.inputs = constructIOArray(that.bb, 0, 30, 44, 24,
+        "period", 1000, "amplitude", 50, "phase", 0, "offset", 0);
+    that.outputs = constructIOArray(that.bb, 100-44, 30, 44, 24,
+        "osc", 0);
     that.update = function (context, t, dt) {
         gset("osc", Math.sin((t+g('phase'))/g('period')*Math.PI*2)*g('amplitude')+g('offset'));
     };
@@ -395,7 +462,8 @@ function constructImageNode() {
         context.stroke();
     };
 
-    that.inputs = constructIOArray("x", 0, "y", 0, "scale", 1.0, "color", "red");
+    that.inputs = constructIOArray(that.bb, 0, 30, 44, 24,
+        "x", 0, "y", 0, "scale", 1.0, "color", "red");
 
     return that;
 }
@@ -524,15 +592,19 @@ var constructPipe = function (start_node, output_idx, start_point) {
     var current_point;
     var end_node;
     var input_idx;
+    var start_bb, end_bb;
     
     that = {};
 
     current_point = start_point;
+    start_bb = start_node.outputs.bounds[output_idx];
+    end_bb = null;
 
     that.drag = function (p) {
         current_point = p;
 
-        // TODO: would be nice to preview, but we'll need detach
+        // TODO: would be nice to preview/snap, but we'll need detach to do it
+        // right
     }
 
     that.drop = function (p) {
@@ -553,6 +625,7 @@ var constructPipe = function (start_node, output_idx, start_point) {
         if (!!end_node) {
             pipes.push(that);
 
+            end_bb = end_node.inputs.bounds[input_idx];
             connectNodes(start_node, output_idx, end_node, input_idx);
         }
     }
@@ -564,6 +637,7 @@ var constructPipe = function (start_node, output_idx, start_point) {
             var dx, dy;
             var mag;
             var head_ang = Math.PI/4;
+            var head_len = 15;
 
             sx = arrow.start.x;
             sy = arrow.start.y;
@@ -578,11 +652,12 @@ var constructPipe = function (start_node, output_idx, start_point) {
                 dy = 0;
             }
             else {
-                dx = -dx / mag * 10;
-                dy = -dy / mag * 10;
+                dx = -dx / mag * head_len;
+                dy = -dy / mag * head_len;
             }
             
             context.strokeStyle = "blue";
+            context.lineWidth = 5;
             context.beginPath();
             context.moveTo(sx+0.5, sy+0.5);
             context.lineTo(ex+0.5, ey+0.5);
@@ -595,7 +670,15 @@ var constructPipe = function (start_node, output_idx, start_point) {
             context.stroke();
         };
 
-        drawArrow({start: start_point, end: current_point});
+        if (end_bb !== null) {
+            drawArrow({start:   {x: start_bb.getMidX(), y: start_bb.getMidY()},
+                       end:     {x: end_bb.getMidX(), y: end_bb.getMidY()}
+            });
+        } else {
+            drawArrow({start:   {x: start_bb.getMidX(), y: start_bb.getMidY()},
+                       end:     current_point
+            });
+        }
     };
 
     return that;
@@ -707,27 +790,6 @@ that.render = function(canvasElement, context, t, dt) {
     var i;
 
     context.clearRect(0, 0, w, h);
-
-    /*
-    for (i = 0; i < arrows.length; i++) {
-        drawArrow(arrows[i]);
-
-        arrows[i].start.y += dt/1000*100;
-        arrows[i].end.y += dt/1000*100;
-
-        if (arrows[i].start.y > h && arrows[i].end.y > h) {
-            var distdiff = Math.abs(arrows[i].end.y - arrows[i].start.y); 
-            arrows[i].start.y -= kHeight + distdiff;
-            arrows[i].end.y -= kHeight +   distdiff;
-        }
-    }
-
-    // draw the currently-dragged arrow
-    if ('start' in arrow) {
-        // arrowhead
-        drawArrow(arrow);
-    }
-    */
 
     // render buttons
     for (i = 0; i < buttons.length; i++) {
