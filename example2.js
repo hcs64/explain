@@ -271,7 +271,7 @@ function constructNode(title) {
     var bb, title_bb;
     var last_updated, update_in_progress;
 
-    bb = constructBB(100,100,100,200);
+    bb = constructBB(10,100,100,200);
     title_bb = constructRelativeBB(bb, 0, 0, 100, 20);
 
     that = {};
@@ -401,11 +401,11 @@ function constructNode(title) {
     return that;
 }
 
-function constructWaveNode() {
+function constructWaveNode(id) {
     var that;
     var super_render;
 
-    that = constructNode("wave!");
+    that = constructNode("wave "+id);
 
     super_render = that.render;
 
@@ -434,14 +434,18 @@ function constructWaveNode() {
         gset("osc", Math.sin((t+g('phase'))/g('period')*Math.PI*2)*g('amplitude')+g('offset'));
     };
 
+    that.unParse = function () {
+        return 'wave ' + id + '\n';
+    };
+
     return that;
 }
 
-function constructImageNode() {
+function constructImageNode(id) {
     var that;
     var super_render;
 
-    that = constructNode("circle!");
+    that = constructNode("circle "+id);
     
     super_render = that.render;
 
@@ -471,14 +475,18 @@ function constructImageNode() {
     that.inputs = constructIOArray(that.bb, 0, 30, 44, 24,
         "x", 0, "y", 0, "size", 1.0, "color", "red");
 
+    that.unParse = function () {
+        return 'image ' + id + '\n';
+    };
+
     return that;
 }
 
-function constructColorNode() {
+function constructColorNode(id) {
     var that;
     var super_render;
 
-    that = constructNode("color!");
+    that = constructNode("color "+id);
 
     super_render = that.render;
     that.render = function (context, t, dt, selected) {
@@ -534,6 +542,10 @@ function constructColorNode() {
     that.outputs = constructIOArray(that.bb, 100-44, 30, 44, 24,
         "", 'blue');
 
+    that.unParse = function () {
+        return 'color ' + id + '\n';
+    };
+
     return that;
 }
 
@@ -551,6 +563,8 @@ var prompt_listener;
 var prompt_callback;
 var prompting_node;
 
+var textual_code;
+
 that = {};
 
 dragging = null;
@@ -565,7 +579,7 @@ buttons = [
         text:   "circle",
         bb:     constructBB(0,50,70,50),
         callback: function() {
-            nodes.push(constructImageNode());
+            nodes.push(constructImageNode(nodes.length));
         }
     }),
 
@@ -573,7 +587,7 @@ buttons = [
         text:   "wave",
         bb:     constructBB(0,120,70,50),
         callback: function() {
-            nodes.push(constructWaveNode());
+            nodes.push(constructWaveNode(nodes.length));
         }
     }),
 
@@ -581,7 +595,7 @@ buttons = [
         text:   "color",
         bb:     constructBB(0,190,70,50),
         callback: function() {
-            nodes.push(constructColorNode());
+            nodes.push(constructColorNode(nodes.length));
         }
     }),
 
@@ -786,6 +800,7 @@ var promptForInput = function(submit_callback, current_value) {
 };
 
 var unParse = function (p) {
+    window.console.log(textual_code);
 };
 
 // public methods
@@ -920,6 +935,9 @@ that.getInterpreter = function () {
     interpreterBackend.render = function (canvasElement, context, t, dt) {
         var node_queue;
         var i, n, j, d, exploring_dependencies;
+
+        textual_code = "";
+
         context.clearRect(0, 0, 256, 256);
         context.strokeStyle="black";
         context.lineWidth=1;
@@ -954,6 +972,7 @@ that.getInterpreter = function () {
                     node_queue.push(n);
                 } else {
                     n.update(context, t, dt);
+                    textual_code = textual_code.concat(n.unParse());
                     n.markUpdated(t);
                 }
             }
