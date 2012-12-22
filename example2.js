@@ -251,6 +251,7 @@ function constructIOArray(parent_bb, x, y, w, h) {
     var a = [];
     a.names = [];
     a.bounds = [];
+    a.selected = -1;
     a.indexes = {};
 
     for (i = 0; i < (arguments.length-first_arg)/2; i++) {
@@ -270,7 +271,7 @@ function constructNode(title) {
     var bb, title_bb;
     var last_updated, update_in_progress;
 
-    bb = constructBB(10,10,100,200);
+    bb = constructBB(100,100,100,200);
     title_bb = constructRelativeBB(bb, 0, 0, 100, 20);
 
     that = {};
@@ -279,7 +280,7 @@ function constructNode(title) {
 
     that.bb = bb;
     
-    that.render = function (context, t, dt) {
+    that.render = function (context, t, dt, selected) {
         context.fillStyle = "black";
         context.fillRect(bb.minx, bb.miny, bb.width, bb.height);
 
@@ -293,11 +294,11 @@ function constructNode(title) {
         title_bb.updateBounds();
         context.fillText(title, title_bb.minx+title_bb.width/2, title_bb.miny+title_bb.height/2);
 
-        drawIO(context, that.inputs, bb.minx+2, 40);
-        drawIO(context, that.outputs, bb.maxx-2-40, 40);
+        drawIO(context, selected, that.inputs, bb.minx+2, 40);
+        drawIO(context, selected, that.outputs, bb.maxx-2-40, 40);
     };
 
-    var drawIO = function(context, list, x, width) {
+    var drawIO = function(context, selected, list, x, width) {
         var i, name, iobb;
         for (i = 0; i < list.length; i++) {
             name = list.names[i];
@@ -305,11 +306,15 @@ function constructNode(title) {
 
             iobb.updateBounds();
 
-            context.fillStyle = "white";
+            if (selected && list.selected == i) {
+                context.fillStyle = "red";
+            } else {
+                context.fillStyle = "white";
+            }
             context.fillRect(iobb.minx+2, iobb.miny+2, iobb.width-4, iobb.height-4);
 
             context.fillStyle = "black";
-            context.font = "bold 12px sans-serif";
+            context.font = "12px sans-serif";
             context.textBaseline = "top";
             context.textAlign = "left";
             context.fillText(name, iobb.minx+2, iobb.miny+2);
@@ -404,8 +409,8 @@ function constructWaveNode() {
 
     super_render = that.render;
 
-    that.render = function (context, t, dt) {
-        super_render(context, dt, dt);
+    that.render = function (context, t, dt, selected) {
+        super_render(context, dt, dt, selected);
         context.fillStyle = "white";
         context.font = "bold 12px sans-serif";
         context.textBaseline = "middle";
@@ -436,12 +441,12 @@ function constructImageNode() {
     var that;
     var super_render;
 
-    that = constructNode("image!");
+    that = constructNode("circle!");
     
     super_render = that.render;
 
-    that.render = function (context, t, dt) {
-        super_render (context, t, dt);
+    that.render = function (context, t, dt, selected) {
+        super_render(context, t, dt, selected);
 
         // imagine this is an image
     };
@@ -456,14 +461,15 @@ function constructImageNode() {
 
     that.update = function (context, t, dt) {
         context.strokeStyle = g('color');
+        context.fillStyle = g('color');
         context.beginPath();
-        context.arc(g('x')+128, g('y')+128, g('scale')*30, 0, Math.PI*2, false);
+        context.arc(g('x')+128, g('y')+128, g('size')*30, 0, Math.PI*2, false);
         context.closePath();
-        context.stroke();
+        context.fill();
     };
 
     that.inputs = constructIOArray(that.bb, 0, 30, 44, 24,
-        "x", 0, "y", 0, "scale", 1.0, "color", "red");
+        "x", 0, "y", 0, "size", 1.0, "color", "red");
 
     return that;
 }
@@ -477,6 +483,10 @@ var pipes;
 var dragging;
 
 var active_pipe;
+var prompt_element;
+var prompt_listener;
+var prompt_callback;
+var prompting_node;
 
 that = {};
 
@@ -489,33 +499,48 @@ pipes = [];
 
 buttons = [
     constructButton({
-        text:   "wave",
-        bb:     constructBB(0,100,50,50),
-        callback: function() {
-            nodes.push(constructWaveNode());
-        }
-    }),
-
-    constructButton({
-        text:   "image",
-        bb:     constructBB(0,170,50,50),
+        text:   "circle",
+        bb:     constructBB(0,100,70,50),
         callback: function() {
             nodes.push(constructImageNode());
         }
     }),
 
     constructButton({
-        text:   "dump",
-        bb:     constructBB(0,240,50,50),
+        text:   "wave",
+        bb:     constructBB(0,170,70,50),
         callback: function() {
-            JS_dump();
+            nodes.push(constructWaveNode());
+        }
+    }),
+
+    constructButton({
+        text:   "unParse",
+        bb:     constructBB(0,240,70,50),
+        callback: function() {
+            unParse();
+        }
+    }),
+
+    constructButton({
+        text:   "reset",
+        bb:     constructBB(0,310, 70, 50),
+        callback: function() {
+            nodes = [];
+            pipes = [];
         }
     }),
 ];
 
-nodes = [];
-pipes = [];
-
+prompt_element = document.getElementById(prompt_id);
+prompt_listener = function () {
+    if (typeof prompt_callback == 'function') {
+        prompt_callback();
+        prompt_callback = null;
+    }
+    return false;
+};
+prompt_element.form.addEventListener("submit", prompt_listener, true);
 
 /*
 // init arrows (load from localStorage if possible)
@@ -684,25 +709,12 @@ var constructPipe = function (start_node, output_idx, start_point) {
     return that;
 };
 
-var promptForNumberInput = function(node, idx) {
-    var prompt_element;
-    var listener;
-    
-    prompt_element = document.getElementById(prompt_id);
-
-    prompt_element.value = node.inputs[idx];
-
-    listener = function () {
-        node.inputs[idx] = parseFloat(prompt_element.value);
-        prompt_element.form.removeEventListener("submit", listener, true);
-        return false;
-    };
-    prompt_element.form.addEventListener("submit", listener, true);
-
-    prompt_element.focus();
+var promptForInput = function(submit_callback, current_value) {
+    prompt_callback = submit_callback;
+    prompt_element.value = current_value;
 };
 
-var JS_dump = function (p) {
+var unParse = function (p) {
 };
 
 // public methods
@@ -716,9 +728,20 @@ that.mouseclick = function (p) {
             endpoint = nodes[i].checkHitInput(p);
             if (endpoint !== null) {
                 // clicked on an input, we may be able to set it
+                // (only purely numeric supported for now)
 
                 if (typeof nodes[i].inputs[endpoint] == 'number') {
-                    promptForNumberInput(nodes[i], endpoint);
+                    nodes[i].inputs.selected = endpoint;
+                    prompting_node = i;
+
+                    // additional function scope in order to preserve locals
+                    promptForInput((function () {
+                        var my_i = i, my_endpoint = endpoint;
+                        return function () {
+                            nodes[my_i].inputs[my_endpoint] = parseFloat(prompt_element.value);
+                            nodes[i].inputs.selected = -1;
+                        };
+                    })(), nodes[i].inputs[endpoint]);
                     return false;
                 }
             }
@@ -790,6 +813,9 @@ that.render = function(canvasElement, context, t, dt) {
     var i;
 
     context.clearRect(0, 0, w, h);
+    context.strokeStyle="black";
+    context.lineWidth=1;
+    context.strokeRect(0.5, 0.5, w-0.5, h-0.5);
 
     // render buttons
     for (i = 0; i < buttons.length; i++) {
@@ -798,7 +824,7 @@ that.render = function(canvasElement, context, t, dt) {
 
     // render nodes
     for (i = 0; i < nodes.length; i++) {
-        nodes[i].render(context, t, dt);
+        nodes[i].render(context, t, dt, (i==prompting_node));
     }
 
     // render pipes
@@ -808,7 +834,7 @@ that.render = function(canvasElement, context, t, dt) {
 
     // highest priority: current dragster (could be redundant)
     if (!!dragging && 'render' in dragging && typeof dragging.render == 'function') {
-        dragging.render(context, t, dt);
+        dragging.render(context, t, dt, (i==prompting_node));
     }
 
 
@@ -825,6 +851,9 @@ that.getInterpreter = function () {
         var node_queue;
         var i, n, j, d, exploring_dependencies;
         context.clearRect(0, 0, 256, 256);
+        context.strokeStyle="black";
+        context.lineWidth=1;
+        context.strokeRect(0.5, 0.5, 255.5, 255.5);
 
         // TODO: should just compute update order once every graph edit,
         // that's kind of the point of this whole project
