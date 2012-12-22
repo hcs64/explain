@@ -474,6 +474,69 @@ function constructImageNode() {
     return that;
 }
 
+function constructColorNode() {
+    var that;
+    var super_render;
+
+    that = constructNode("color!");
+
+    super_render = that.render;
+    that.render = function (context, t, dt, selected) {
+        var iobb;
+        super_render(context, t, dt, selected);
+
+        iobb = that.outputs.bounds[0];
+        iobb.updateBounds();
+        context.fillStyle = getCurColor();
+        context.fillRect(iobb.minx+2, iobb.miny+2, iobb.width-4, iobb.height-4);
+    };
+
+    var gset = function(name, value) {
+        that.outputs[that.outputs.indexes[name]] = value;
+    };
+
+    var g = function(name) {
+        var v = that.inputs[that.inputs.indexes[name]];
+        if (typeof v == 'function') {
+            return v();
+        }
+        return v;
+    };
+
+    var makeChannelString = function(v) {
+        var i, s;
+        
+        i = Math.floor(Math.min(255, Math.max(0, v)));
+        if (isNaN(i)) {
+            i = 0;
+        }
+
+        s = i.toString(16);
+        if (s.length == 1) {
+            s = "0" + s;
+        }
+        return s;
+    };
+
+    var getCurColor = function() {
+        var red = g('red');
+        var green = g('green');
+        var blue = g('blue');
+        return "#"+makeChannelString(red)+makeChannelString(green)+makeChannelString(blue);
+    };
+
+    that.update = function (context, t, dt) {
+        gset('', getCurColor());
+    };
+
+    that.inputs = constructIOArray(that.bb, 0, 30, 44, 24,
+        "red", 0, "green", 0, "blue", 255);
+    that.outputs = constructIOArray(that.bb, 100-44, 30, 44, 24,
+        "", 'blue');
+
+    return that;
+}
+
 // the pre-built backend, main execution environment
 function constructBasicBackend(prompt_id) {
 var that;
@@ -500,7 +563,7 @@ pipes = [];
 buttons = [
     constructButton({
         text:   "circle",
-        bb:     constructBB(0,100,70,50),
+        bb:     constructBB(0,50,70,50),
         callback: function() {
             nodes.push(constructImageNode());
         }
@@ -508,15 +571,23 @@ buttons = [
 
     constructButton({
         text:   "wave",
-        bb:     constructBB(0,170,70,50),
+        bb:     constructBB(0,120,70,50),
         callback: function() {
             nodes.push(constructWaveNode());
         }
     }),
 
     constructButton({
+        text:   "color",
+        bb:     constructBB(0,190,70,50),
+        callback: function() {
+            nodes.push(constructColorNode());
+        }
+    }),
+
+    constructButton({
         text:   "unParse",
-        bb:     constructBB(0,240,70,50),
+        bb:     constructBB(0,260,70,50),
         callback: function() {
             unParse();
         }
@@ -524,7 +595,7 @@ buttons = [
 
     constructButton({
         text:   "reset",
-        bb:     constructBB(0,310, 70, 50),
+        bb:     constructBB(0,330,70, 50),
         callback: function() {
             nodes = [];
             pipes = [];
