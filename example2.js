@@ -827,16 +827,15 @@ that.render = function(canvasElement, context, t, dt) {
         nodes[i].render(context, t, dt, (i==prompting_node));
     }
 
-    // render pipes
-    for (i = 0; i < pipes.length; i++) {
-        pipes[i].render(context);
-    }
-
-    // highest priority: current dragster (could be redundant)
+    // give some priority to current dragster (could be redundant)
     if (!!dragging && 'render' in dragging && typeof dragging.render == 'function') {
         dragging.render(context, t, dt, (i==prompting_node));
     }
 
+    // render pipes (looks bad to be behind dragged object)
+    for (i = 0; i < pipes.length; i++) {
+        pipes[i].render(context);
+    }
 
     // keep runnning me
     return true;
