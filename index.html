@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>i.e.</title>
+    <script src="util.js"></script>
+    <script src="example2.js"></script>
+</head>
+<body>
+<div>
+<form onSubmit="return false;">
+<input id="prompt">
+</form>
+</div>
+<script>
+(function(){
+var backend = new constructBasicBackend("prompt");
+
+addSimRenderer(backend, "editor", 640, 480);
+addSimRenderer(backend.getInterpreter(), "viewer", 256, 256, null);
+})();
+</script>
+</body>
+</html>
