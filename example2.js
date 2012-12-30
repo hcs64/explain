@@ -75,6 +75,19 @@ function initMouseEvents(canvasElement, callbacks) {
     }, false);
 }
 
+// library for doing simple things on Canvas 2D Context
+
+var drawlib = {
+    circle: function (context, x, y, radius, color) {
+        context.strokeStyle = color;
+        context.fillStyle = color;
+        context.beginPath();
+        context.arc(x, y, radius, 0, Math.PI*2, false);
+        context.closePath();
+        context.fill();
+    },
+};
+
 //
 function addSimRenderer(backend, renderCanvasId, width, height) {
     var canvasElement;
@@ -429,7 +442,7 @@ function constructWaveNode(id) {
     return that;
 }
 
-function constructImageNode(id) {
+function constructCircleNode(id) {
     var that;
     var super_render;
 
@@ -452,20 +465,15 @@ function constructImageNode(id) {
     };
 
     that.update = function (context, t, dt) {
-        context.strokeStyle = g('color');
-        context.fillStyle = g('color');
-        context.beginPath();
-        context.arc(g('x')+128, g('y')+128, g('size')*30, 0, Math.PI*2, false);
-        context.closePath();
-        context.fill();
-        //window.console.log("circle("+g('x')+","+g('y')+","+g('size')+","+g('color')+")");
+        drawlib.circle(context, g('x')+128, g('y')+128, g('size'), g('color'));
     };
 
     that.inputs = constructIOArray(that.bb, 0, 30, 44, 24,
-        "x", 0, "y", 0, "size", 1.0, "color", "red");
+        "x", 0, "y", 0, "size", 30.0, "color", "red");
 
     that.unParse = function () {
-        return 'image ' + id + '\n';
+        var symname = "circle_"+id;
+        return "drawlib.circle(ctx, "+symname+"_x, "+symname+"_y, "+symname+"_size, "+symname+"_color);\n";
     };
 
     return that;
@@ -568,7 +576,7 @@ buttons = [
         text:   "circle",
         bb:     new BB(0,50,70,50),
         callback: function() {
-            nodes.push(constructImageNode(nodes.length));
+            nodes.push(constructCircleNode(nodes.length));
         }
     }),
 
