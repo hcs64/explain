@@ -975,7 +975,9 @@ that.getInterpreter = function () {
                         n.update(context, t, dt);
                     } catch (e) {
                         // ignore exceptions in update
-                        window.console.log(e);
+                        if ('console' in window) {
+                            window.console.log(e);
+                        }
                     }
                     textual_code = textual_code.concat(n.unParse());
                     n.markUpdated(t);
