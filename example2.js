@@ -124,7 +124,13 @@ function addSimRenderer(backend, renderCanvasId, width, height) {
 }
 
 // bounding boxes, only to be used in pixel-space
-var boundingBoxProto = {
+function BB(minx, miny, width, height) {
+    this.width = width;
+    this.height = height;
+    this.moveTo(minx, miny);
+}
+
+BB.prototype = {
     contains: function(p) {
         return (p.x >= this.minx && p.y >= this.miny &&
                 p.x <= this.maxx && p.y <= this.maxy);
@@ -149,20 +155,17 @@ var boundingBoxProto = {
     getMidY: function() { return this.miny+this.height/2; },
 };
 
-function constructBB(minx, miny, width, height) {
-    var F = function(){};
-    F.prototype = boundingBoxProto;
-    obj = new F;
 
-    obj.width = width;
-    obj.height = height;
-
-    obj.moveTo(minx, miny);
-
-    return obj;
+function RelativeBB(relative_to, dx, dy, width, height) {
+    this.relative_to = relative_to;
+    this.dx = dx;
+    this.dy = dy;
+    this.width = width;
+    this.height = height;
+    this.updateBounds();
 }
 
-var relativeBoundingBoxProto = {
+RelativeBB.prototype = {
     contains: function(p) {
         this.updateBounds();
         return (p.x >= this.minx && p.y >= this.miny &&
@@ -194,21 +197,6 @@ var relativeBoundingBoxProto = {
     getMidX: function() { this.updateBounds(); return this.minx+this.width/2; },
     getMidY: function() { this.updateBounds(); return this.miny+this.height/2; },
 };
-
-function constructRelativeBB(relative_to, dx, dy, width, height) {
-    var F = function(){};
-    F.prototype = relativeBoundingBoxProto;
-    obj = new F;
-
-    obj.relative_to = relative_to;
-    obj.dx = dx;
-    obj.dy = dy;
-    obj.width = width;
-    obj.height = height;
-    obj.updateBounds();
-
-    return obj;
-}
 
 //
 function constructButton(args) {
@@ -258,7 +246,7 @@ function constructIOArray(parent_bb, x, y, w, h) {
         j = i*2 + first_arg;
         a.names[i] = arguments[j];
         a.indexes[arguments[j]] = i;
-        a.bounds[i] = constructRelativeBB(parent_bb, x, y+h*i, w, h);
+        a.bounds[i] = new RelativeBB(parent_bb, x, y+h*i, w, h);
 
         a[i] = arguments[j+1];
     }
@@ -271,8 +259,8 @@ function constructNode(title) {
     var bb, title_bb;
     var last_updated, update_in_progress;
 
-    bb = constructBB(10,100,100,200);
-    title_bb = constructRelativeBB(bb, 0, 0, 100, 20);
+    bb = new BB(10,100,100,200);
+    title_bb = new RelativeBB(bb, 0, 0, 100, 20);
 
     that = {};
     that.inputs = [];
@@ -470,6 +458,7 @@ function constructImageNode(id) {
         context.arc(g('x')+128, g('y')+128, g('size')*30, 0, Math.PI*2, false);
         context.closePath();
         context.fill();
+        //window.console.log("circle("+g('x')+","+g('y')+","+g('size')+","+g('color')+")");
     };
 
     that.inputs = constructIOArray(that.bb, 0, 30, 44, 24,
@@ -577,7 +566,7 @@ pipes = [];
 buttons = [
     constructButton({
         text:   "circle",
-        bb:     constructBB(0,50,70,50),
+        bb:     new BB(0,50,70,50),
         callback: function() {
             nodes.push(constructImageNode(nodes.length));
         }
@@ -585,7 +574,7 @@ buttons = [
 
     constructButton({
         text:   "wave",
-        bb:     constructBB(0,120,70,50),
+        bb:     new BB(0,120,70,50),
         callback: function() {
             nodes.push(constructWaveNode(nodes.length));
         }
@@ -593,7 +582,7 @@ buttons = [
 
     constructButton({
         text:   "color",
-        bb:     constructBB(0,190,70,50),
+        bb:     new BB(0,190,70,50),
         callback: function() {
             nodes.push(constructColorNode(nodes.length));
         }
@@ -601,7 +590,7 @@ buttons = [
 
     constructButton({
         text:   "unParse",
-        bb:     constructBB(0,260,70,50),
+        bb:     new BB(0,260,70,50),
         callback: function() {
             unParse();
         }
@@ -609,7 +598,7 @@ buttons = [
 
     constructButton({
         text:   "reset",
-        bb:     constructBB(0,330,70, 50),
+        bb:     new BB(0,330,70, 50),
         callback: function() {
             nodes = [];
             pipes = [];
