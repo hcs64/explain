@@ -86,6 +86,26 @@ var drawlib = {
         context.closePath();
         context.fill();
     },
+
+    makeChannelString: function(v) {
+        var i, s;
+        
+        i = Math.floor(Math.min(255, Math.max(0, v)));
+        if (isNaN(i)) {
+            i = 0;
+        }
+
+        s = i.toString(16);
+        if (s.length == 1) {
+            s = "0" + s;
+        }
+        return s;
+    },
+
+    makeColor: function(r,g,b) {
+        return '#' + drawlib.makeChannelString(r) + drawlib.makeChannelString(g) + drawlib.makeChannelString(b);
+    }, 
+
 };
 
 //
@@ -267,10 +287,11 @@ function constructIOArray(parent_bb, x, y, w, h) {
     return a;
 }
 
-function constructNode(title) {
+function constructNode(symbase, id) {
     var that;
     var bb, title_bb;
     var last_updated, update_in_progress;
+    var title = symbase + ' ' + id;
 
     bb = new BB(10,100,100,200);
     title_bb = new RelativeBB(bb, 0, 0, 100, 20);
@@ -399,6 +420,63 @@ function constructNode(title) {
         update_in_progress = false;
     };
 
+    //
+    that.gset = function(name, value) {
+        that.outputs[that.outputs.indexes[name]] = value;
+    };
+
+    that.g = function(name) {
+        var v = that.inputs[that.inputs.indexes[name]];
+        if (typeof v == 'function') {
+            return v();
+        }
+        return v;
+    };
+
+    that.gtype = function(name) {
+        var v = that.inputs[that.inputs.indexes[name]];
+
+        return typeof v;
+    }
+
+    that.g_unParse = function(name) {
+        var v = that.inputs[that.inputs.indexes[name]];
+        if (typeof v == 'function') {
+            return v.source_node.unParseOutName(v.source_idx);
+        }
+        else if (typeof v == 'string') {
+            return '"'+v+'"';
+        }
+        else if (typeof v == 'number') {
+            return v;
+        }
+        else {
+            return JSON.serialize(v);
+        }
+    };
+
+    that.symname = function(postfix) {
+        var basename = symbase+'_'+id
+        if (typeof postfix == 'string') {
+            return basename+'_'+postfix;
+        } else if (typeof postfix == 'number') {
+            return basename+'_'+that.inputs.names[postfix];
+        } else {
+            return basename;
+        }
+    };
+
+    that.symname_out = function(postfix) {
+        var basename = symbase+'_'+id
+        if (typeof postfix == 'string') {
+            return basename+'_'+postfix;
+        } else if (typeof postfix == 'number') {
+            return basename+'_'+that.outputs.names[postfix];
+        } else {
+            return basename;
+        }
+    };
+
     return that;
 }
 
@@ -406,25 +484,19 @@ function constructWaveNode(id) {
     var that;
     var super_render;
 
-    that = constructNode("wave "+id);
+    that = constructNode('wave',id);
 
     super_render = that.render;
 
+    var g = that.g;
+    var gset = that.gset;
+    var gtype = that.gtype;
+    var g_unParse = that.g_unParse;
+    var symname = that.symname;
+    that.unParseOutName = that.symname_out;
+
     that.render = function (context, t, dt, selected) {
         super_render(context, dt, dt, selected);
-        context.fillStyle = "white";
-        context.font = "bold 12px sans-serif";
-        context.textBaseline = "middle";
-        context.textAlign = "center";
-    };
-
-    var gset = function(name, value) {that.outputs[that.outputs.indexes[name]] = value;};
-    var g = function(name) {
-        var v = that.inputs[that.inputs.indexes[name]];
-        if (typeof v == 'function') {
-            return v();
-        }
-        return v;
     };
 
     that.inputs = constructIOArray(that.bb, 0, 30, 44, 24,
@@ -436,7 +508,29 @@ function constructWaveNode(id) {
     };
 
     that.unParse = function () {
-        return 'wave ' + id + '\n';
+        var outstring = 'var '+symname('osc')+ ' = ';
+
+        if ((gtype('amplitude') != 'number') || g('amplitude') !== 1) {
+            outstring = outstring.concat(g_unParse('amplitude')+' * ');
+        }
+
+        outstring = outstring.concat('Math.sin(');
+
+        if ((gtype('phase') != 'number') || g('phase') !== 0) {
+            outstring = outstring.concat('(t + '+g_unParse('phase')+')');
+        } else {
+            outstring = outstring.concat('t');
+        }
+        
+        outstring = outstring.concat(' / ' + g_unParse('period') + ' * Math.PI*2)');
+
+        if ((gtype('offset') != 'number') || g('offset') !== 0) {
+            outstring = outstring.concat(' + '+g_unParse('offset'));
+        }
+
+        outstring = outstring.concat(';\n');
+
+        return outstring;
     };
 
     return that;
@@ -446,9 +540,16 @@ function constructCircleNode(id) {
     var that;
     var super_render;
 
-    that = constructNode("circle "+id);
+    that = constructNode('circle',id);
     
     super_render = that.render;
+
+    var g = that.g;
+    var gset = that.gset;
+    var gtype = that.gtype;
+    var g_unParse = that.g_unParse;
+    var symname = that.symname;
+    that.unParseOutName = that.symname_out;
 
     that.render = function (context, t, dt, selected) {
         super_render(context, t, dt, selected);
@@ -456,13 +557,7 @@ function constructCircleNode(id) {
         // imagine this is an image
     };
 
-    var g = function(name) {
-        var v = that.inputs[that.inputs.indexes[name]];
-        if (typeof v == 'function') {
-            return v();
-        }
-        return v;
-    };
+    that.unParseOutName = that.symname_out;
 
     that.update = function (context, t, dt) {
         drawlib.circle(context, g('x')+128, g('y')+128, g('size'), g('color'));
@@ -472,8 +567,12 @@ function constructCircleNode(id) {
         "x", 0, "y", 0, "size", 30.0, "color", "red");
 
     that.unParse = function () {
-        var symname = "circle_"+id;
-        return "drawlib.circle(ctx, "+symname+"_x, "+symname+"_y, "+symname+"_size, "+symname+"_color);\n";
+
+        return 'var '+symname('x')+' = ' + g_unParse('x') + ' + 128;\n'+
+               'var '+symname('y')+' = ' + g_unParse('y') + ' + 128;\n'+
+               'var '+symname('size')+' = ' + g_unParse('size') + ';\n'+
+               'var '+symname('color')+' = ' + g_unParse('color') + ';\n' +
+            "circle(ctx, "+symname('x')+','+symname('y')+','+symname('size')+","+symname('color')+");\n";
     };
 
     return that;
@@ -483,7 +582,14 @@ function constructColorNode(id) {
     var that;
     var super_render;
 
-    that = constructNode("color "+id);
+    that = constructNode('color',id);
+
+    var g = that.g;
+    var gset = that.gset;
+    var gtype = that.gtype;
+    var g_unParse = that.g_unParse;
+    var symname = that.symname;
+    that.unParseOutName = that.symname_out;
 
     super_render = that.render;
     that.render = function (context, t, dt, selected) {
@@ -496,51 +602,27 @@ function constructColorNode(id) {
         context.fillRect(iobb.minx+2, iobb.miny+2, iobb.width-4, iobb.height-4);
     };
 
-    var gset = function(name, value) {
-        that.outputs[that.outputs.indexes[name]] = value;
-    };
-
-    var g = function(name) {
-        var v = that.inputs[that.inputs.indexes[name]];
-        if (typeof v == 'function') {
-            return v();
-        }
-        return v;
-    };
-
-    var makeChannelString = function(v) {
-        var i, s;
-        
-        i = Math.floor(Math.min(255, Math.max(0, v)));
-        if (isNaN(i)) {
-            i = 0;
-        }
-
-        s = i.toString(16);
-        if (s.length == 1) {
-            s = "0" + s;
-        }
-        return s;
-    };
-
     var getCurColor = function() {
         var red = g('red');
         var green = g('green');
         var blue = g('blue');
-        return "#"+makeChannelString(red)+makeChannelString(green)+makeChannelString(blue);
+        return drawlib.makeColor(red, green, blue);
     };
 
     that.update = function (context, t, dt) {
-        gset('', getCurColor());
+        gset('rgb', getCurColor());
     };
 
     that.inputs = constructIOArray(that.bb, 0, 30, 44, 24,
         "red", 0, "green", 0, "blue", 255);
     that.outputs = constructIOArray(that.bb, 100-44, 30, 44, 24,
-        "", 'blue');
+        'rgb', '#0000FF');
 
     that.unParse = function () {
-        return 'color ' + id + '\n';
+        return 'var ' + symname('red')  + ' = ' + g_unParse('red') + ';\n' +
+               'var ' + symname('green')+ ' = ' + g_unParse('green') + ';\n' +
+               'var ' + symname('blue') + ' = ' + g_unParse('blue') + ';\n' +
+               'var ' + symname('rgb') + ' = ' + 'makeColor('+symname('red')+', '+symname('green')+', '+symname('blue')+');\n';
     };
 
     return that;
@@ -692,6 +774,8 @@ var connectNodes = function(source_node, source_idx, dest_node, dest_idx) {
     dest_node.inputs[dest_idx] = function () {
         return source_node.outputs[source_idx];
     };
+    dest_node.inputs[dest_idx].source_node = source_node;
+    dest_node.inputs[dest_idx].source_idx = source_idx;
 }
 
 var constructPipe = function (start_node, output_idx, start_point) {
@@ -958,7 +1042,7 @@ that.getInterpreter = function () {
             if (n.isOutOfDate(t)) {
                 for (j = 0; j < n.dependencies.length; j++) {
                     d = n.dependencies[j];
-                    if (d.isOutOfDate(t) && !d.isUpdatePending()) {
+                    if (d.isOutOfDate(t)) {// && !d.isUpdatePending()) {
                         exploring_dependencies = true;
                         d.markUpdatePending();
                         node_queue.push(d);
