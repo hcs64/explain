@@ -971,7 +971,12 @@ that.getInterpreter = function () {
                 if (exploring_dependencies) {
                     node_queue.push(n);
                 } else {
-                    n.update(context, t, dt);
+                    try {
+                        n.update(context, t, dt);
+                    } catch (e) {
+                        // ignore exceptions in update
+                        window.console.log(e);
+                    }
                     textual_code = textual_code.concat(n.unParse());
                     n.markUpdated(t);
                 }
