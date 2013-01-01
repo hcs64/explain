@@ -122,9 +122,7 @@ function addSimRenderer(backend, renderCanvasId, width, height) {
         return;
     }
 
-    canvasElement = document.createElement("canvas");
-    canvasElement.id = renderCanvasId;
-    document.body.appendChild(canvasElement);
+    canvasElement = document.getElementById(renderCanvasId);
     canvasElement.width = width
     canvasElement.height= height;
     renderContext = canvasElement.getContext("2d");
@@ -629,7 +627,7 @@ function constructColorNode(id) {
 }
 
 // the pre-built backend, main execution environment
-function constructBasicBackend(prompt_id) {
+function constructBasicBackend(prompt_id, output_element) {
 var that;
 var buttons;
 var nodes;
@@ -881,7 +879,8 @@ var promptForInput = function(submit_callback, current_value) {
 };
 
 var unParse = function (p) {
-    window.console.log(textual_code);
+    output_element.value = textual_code;
+    //window.console.log(textual_code);
 };
 
 // public methods

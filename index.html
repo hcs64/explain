@@ -12,12 +12,21 @@
 <input id="prompt">
 </form>
 </div>
+<div>
+<canvas id="editor"></canvas>
+<canvas id="viewer"></canvas>
+</div>
+<div>
+<form name="output_form" onSubmit="return false;">
+<textarea name="output_ta" cols="80" rows="10" readonly="yes"></textarea>
+</form>
+</div>
 <script>
 (function(){
-var backend = new constructBasicBackend("prompt");
+var backend = new constructBasicBackend("prompt", document.output_form.output_ta);
 
 addSimRenderer(backend, "editor", 640, 480);
-addSimRenderer(backend.getInterpreter(), "viewer", 256, 256, null);
+addSimRenderer(backend.getInterpreter(), "viewer", 256, 256);
 })();
 </script>
 </body>
