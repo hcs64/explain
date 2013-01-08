@@ -4,7 +4,7 @@ import bsh.EvalError;
 import bsh.BshClassManager;
 
 public class AwtTest extends java.applet.Applet implements Runnable {
-    Color c;
+    Color c1, c2;
     boolean dir = true; // true if getting brighter
     volatile boolean running = false;
     boolean animating = false;
@@ -27,7 +27,8 @@ public class AwtTest extends java.applet.Applet implements Runnable {
     }
 
     public void start() {
-        c = Color.BLACK;
+        c1 = Color.BLACK;
+        c2 = Color.RED;
     }
 
     public void stop() {
@@ -51,116 +52,30 @@ public class AwtTest extends java.applet.Applet implements Runnable {
         }
     }
 
-    public class ScriptTalker {
-        private Graphics g;
-        private boolean d;
-
-        public ScriptTalker(Graphics g) {
-            this.g = g;
-        }
-
-        public void setColor(Color c) {
-            g.setColor(c);
-        }
-
-        public Color brighter(Color c) {
-            return c.brighter();
-        }
-
-        public Color darker(Color c) {
-            return c.darker();
-        }
-
-        public void fillRect(int x, int y, int w, int h) {
-            g.fillRect(x,y,w,h);
-        }
-
-        public float getBrightness(Color c) {
-            int r = c.getRed();
-            int g = c.getGreen();
-            int b = c.getBlue();
-            float [] a = Color.RGBtoHSB(r,g,b, null);
-
-            return a[2];
-        }
-
-        public boolean getDir() {
-            return d;
-        }
-
-        public void setDir(boolean d) {
-            this.d = d;
-        }
-    }
-
-    class ExposeMethodSpec {
-        public ExposeMethodSpec(Class c, String n, Class [] a) {
-            clas = c;
-            name = n;
-            args = a;
-        };
-
-        private Class<?> clas;
-        private String name;
-        private Class[] args;
-
-        public void exposeTo(bsh.BshClassManager manager) throws NoSuchMethodException {
-            manager.cacheResolvedMethod(clas, args, clas.getMethod(name, args));
-        }
-    }
-
     public void paint(Graphics g) {
-        ScriptTalker st = new ScriptTalker(g);
+        GraphicsWrapper st = new GraphicsWrapper(g);
         Interpreter bsh = new Interpreter();
         
-        ExposeMethodSpec [] exposure = {
-            new ExposeMethodSpec( ScriptTalker.class,   "setColor", new Class[]{Color.class} ),
-            new ExposeMethodSpec( ScriptTalker.class,   "brighter", new Class[]{Color.class} ),
-            new ExposeMethodSpec( ScriptTalker.class,   "darker",   new Class[]{Color.class} ),
-            new ExposeMethodSpec( ScriptTalker.class,   "fillRect", new Class[]{int.class, int.class, int.class, int.class} ),
-            new ExposeMethodSpec( ScriptTalker.class,   "getBrightness", new Class[]{Color.class} ),
-            new ExposeMethodSpec( ScriptTalker.class,   "getDir",   new Class[]{} ),
-            new ExposeMethodSpec( ScriptTalker.class,   "setDir",   new Class[]{boolean.class} ),
-        };
+        GraphicsWrapper.exposeTo(bsh.getClassManager());
 
-        try {
-            for (ExposeMethodSpec s : exposure) {
-                s.exposeTo(bsh.getClassManager());
-            }
-        } catch (NoSuchMethodException e) {
-            e.printStackTrace();
-            running = false;
-            return;
-        }
-
-        st.setDir(dir);
         try {
                 bsh.set("x", x);
                 bsh.set("g", st);
-                bsh.set("c", c);
-                bsh.eval(
-"g.setColor(c);"+
-"g.fillRect(0, 0, x++, 100);"+
-"if (x > 200) x = 0;"+
-"if (g.getDir()) {"+
-"   c = g.brighter(c);"+
-"   if (g.getBrightness(c) > 0.9) {"+
-"       g.setDir(!g.getDir());"+
-"   }"+
-"} else {"+
-"   c = g.darker(c);"+
-"   if (g.getBrightness(c) < 0.1) {"+
-"       g.setDir(!g.getDir());"+
-"   }"+
-"}");
-                c = (Color)bsh.get("c");
+                bsh.set("c1", new ColorWrapper(c1));
+                bsh.set("c2", new ColorWrapper(c2));
+                bsh.eval( "         g.setColor(c1);    /* set the drawing color*/"
++"         g.drawLine(30, 40, 100, 200);"
++"         g.drawOval(150, 180, 10, 10);"
++"         g.drawRect(200, 210, 20, 30);"
++"         g.setColor(new ColorWrapper(.5f,.5f,.5f));  /* change the drawing color*/"
++"         g.fillOval(300, 310, 30, 50);"
++"         g.fillRect(400, 350, 60, 50);"
+);
                 x = (Integer)bsh.get("x");
         } catch (EvalError e) {
             e.printStackTrace();
             running = false;
             return;
         }
-
-        dir = st.getDir();
     }
 }
