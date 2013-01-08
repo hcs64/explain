@@ -26,7 +26,7 @@ public class AwtTest extends java.applet.Applet implements Runnable {
         try {
             bsh.eval(""
 +"import GraphicsWrapper;"
-+"import java.lang.Math.*;"
++"import java.awt.Color;"
 +"int frames = 0;"
 +"public void render(GraphicsWrapper g) {"
 +"float red = (Math.sin(frames/10.)+1)/2;"
