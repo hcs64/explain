@@ -31,8 +31,8 @@ public class GraphicsWrapper {
         args_2ian, args_2ian, args_4int, args_6int,
         new Class[]{String.class, int.class, int.class}, args_4intb, args_6int, args_4int,
         args_2ian, args_6int, args_4int, args_void,
-        args_void, args_4int, args_4int, new Class[]{ColorWrapper.class},
-        args_void, new Class[]{ColorWrapper.class}, args_void, new Class[]{int.class, int.class}
+        args_void, args_4int, args_4int, new Class[]{Color.class},
+        args_void, new Class[]{Color.class}, args_void, new Class[]{int.class, int.class}
     };
 
     static final ExposeMethodSpec exposures[] = ExposeMethodSpec.buildArray(GraphicsWrapper.class, methodNames, methodArgs, methodNames.length);
@@ -46,8 +46,6 @@ public class GraphicsWrapper {
                 break;
             }
         }
-
-        ColorWrapper.exposeTo(manager);
     }
 
     // standard Graphics constructors
@@ -101,7 +99,7 @@ public class GraphicsWrapper {
     }
 
     /*
-    public boolean drawImage(ImageWrapper img, int x, int y, ColorWrapper bgcolor, ImageObserverWrapper observer) {
+    public boolean drawImage(ImageWrapper img, int x, int y, Color bgcolor, ImageObserverWrapper observer) {
         return g.drawImage(img.unwrap(), x, y, bgcolor, observer.unwrap());
     }
 
@@ -109,7 +107,7 @@ public class GraphicsWrapper {
         return g.drawImage(img.unwrap(), x, y, observer.unwrap());
     }
 
-    public boolean drawImage(ImageWrapper img, int x, int y, int width, int height, ColorWrapper bgcolor, ImageObserverWrapper observer) {
+    public boolean drawImage(ImageWrapper img, int x, int y, int width, int height, Color bgcolor, ImageObserverWrapper observer) {
         return g.drawImage(img.unwrap(), x, y, width, height, bgcolor.unwrap(), observer.unwrap());
     }
 
@@ -117,7 +115,7 @@ public class GraphicsWrapper {
         return g.drawImage(img.unwrap(), x, y, width, height, observer.unwrap());
     }
 
-    public boolean drawImage(ImageWrapper img, int dx1, int dy1, int dx2, int dy2, int sx1, int sy1, int sx2, int sy2, ColorWrapper bgcolor, ImageObserverWrapper observer) {
+    public boolean drawImage(ImageWrapper img, int dx1, int dy1, int dx2, int dy2, int sx1, int sy1, int sx2, int sy2, Color bgcolor, ImageObserverWrapper observer) {
         return g.drawImage(img.unwrap(), dx1, dy1, dx2, dy2, sx1, sy1, sx2, sy2, bgcolor.unwrap(), observer.unwrap());
     }
 
@@ -196,8 +194,8 @@ public class GraphicsWrapper {
     //public Rectangle getClipBounds() {
     //}
 
-    public ColorWrapper getColor() {
-        return new ColorWrapper(g.getColor());
+    public Color getColor() {
+        return g.getColor();
     }
 
     //public Font getFont() {
@@ -220,8 +218,8 @@ public class GraphicsWrapper {
     //public void setClip(Shape clip) {
     //}
 
-    public void setColor(ColorWrapper c) {
-        g.setColor(c.unwrap());
+    public void setColor(Color c) {
+        g.setColor(c);
     }
 
     //public void setFont(Font font) {
@@ -231,8 +229,8 @@ public class GraphicsWrapper {
         g.setPaintMode();
     }
 
-    public void setXORMode(ColorWrapper cl) {
-        g.setXORMode(cl.unwrap());
+    public void setXORMode(Color cl) {
+        g.setXORMode(cl);
     }
 
     public String toString() {
