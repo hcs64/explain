@@ -13,15 +13,14 @@ public class AwtTest extends java.applet.Applet implements Runnable {
     Thread t;
     Image buffer_image;
     Graphics buffer_graphics;
-
+    Rectangle r = new Rectangle(0,0,0,0);
 
     public void init() {
         running = true;
         t = new Thread(this);
         t.start();
 
-        buffer_image = createImage(bounds().width, bounds().height);
-        buffer_graphics = buffer_image.getGraphics();
+        buffer_image = null;
 
         bsh = new Interpreter();
 
@@ -84,6 +83,13 @@ public class AwtTest extends java.applet.Applet implements Runnable {
     }
 
     public void paint(Graphics g) {
+        if (buffer_image == null || getBounds().width != r.width || getBounds().height != r.height) {
+            buffer_image = createImage(getBounds().width, getBounds().height);
+            buffer_graphics = buffer_image.getGraphics();
+
+            r = getBounds();
+        }
+
         GraphicsWrapper gw = new GraphicsWrapper(buffer_graphics);
 
         try {
