@@ -1,7 +1,11 @@
 import java.awt.*;
+import java.util.HashMap;
+import java.net.MalformedURLException;
 import bsh.Interpreter;
 import bsh.EvalError;
 import bsh.BshClassManager;
+import org.etherpad_lite_client.EPLiteClient;
+import org.etherpad_lite_client.EPLiteException;
 
 public class AwtTest extends java.applet.Applet implements Runnable {
     Color c1, c2;
@@ -13,6 +17,8 @@ public class AwtTest extends java.applet.Applet implements Runnable {
     Image buffer_image;
     Graphics buffer_graphics;
     Rectangle r = new Rectangle(0,0,0,0);
+    String code;
+    EPLiteClient ether;
 
     public void init() {
         running = true;
@@ -26,7 +32,30 @@ public class AwtTest extends java.applet.Applet implements Runnable {
         GraphicsWrapper.exposeTo(bsh.getClassManager());
 
         try {
-            bsh.eval(""
+            ether = new EPLiteClient("http://"+getCodeBase().getHost()+":9001", "rEn0BtUbEroqyJMIQpsqexEadj9IJuoP");
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
+        }
+
+        if (ether.checkToken()) {
+            try {
+                HashMap codeMap = ether.getText("testpad");
+                code = (String)codeMap.get("text");
+                
+            } catch (EPLiteException e) {
+                // on an error code will be left null
+                System.err.println("failed getting pad, starting anew");
+            }
+            System.out.println(code);
+            //code = null;
+        }
+        else {
+            System.err.println("checkToken failed, not using EP");
+            ether = null;
+        }
+
+        if (code == null) {
+            code = ""
 +"import GraphicsWrapper;"
 +"import java.awt.Color;"
 +"import java.awt.Font;"
@@ -39,14 +68,20 @@ public class AwtTest extends java.applet.Applet implements Runnable {
 +"g.drawLine(frames++, 40, 100, 200);"
 +"g.drawOval(150, 180, 10, 10);"
 +"g.drawRect(200, 210, 20, 30);"
-+"g.setColor(new Color(red,.5f,.5f));"
++"g.setColor(new Color(red,red,red));"
 +"g.fillOval(300, 310, 30, 50);"
 +"g.fillRect(400, 350, 60, 50);"
 +"g.setColor(Color.BLACK);"
 +"g.setFont(counter_font);"
 +"g.drawString(String.valueOf(frames), frames, 40);"
-+"}"
-);
++"}";
+            if (ether != null) {
+                ether.setText("testpad", code);
+            }
+        }
+
+        try {
+            bsh.eval(code);
         } catch (EvalError e) {
             e.printStackTrace();
             running = false;
@@ -65,6 +100,7 @@ public class AwtTest extends java.applet.Applet implements Runnable {
     public void start() {
         c1 = Color.BLACK;
         c2 = Color.RED;
+
     }
 
     public void stop() {
