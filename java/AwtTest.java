@@ -2,7 +2,6 @@ import java.awt.*;
 import bsh.Interpreter;
 import bsh.EvalError;
 import bsh.BshClassManager;
-import bsh.Capabilities;
 
 public class AwtTest extends java.applet.Applet implements Runnable {
     Color c1, c2;
@@ -30,7 +29,9 @@ public class AwtTest extends java.applet.Applet implements Runnable {
             bsh.eval(""
 +"import GraphicsWrapper;"
 +"import java.awt.Color;"
++"import java.awt.Font;"
 +"int frames = 0;"
++"Font counter_font = new Font(\"Monospaced\", Font.PLAIN, 15);"
 +"public void render(GraphicsWrapper g) {"
 +"float red = (Math.sin(frames/10.)+1)/2;"
 +"g.clearRect(0,0,640,480);"
@@ -42,6 +43,7 @@ public class AwtTest extends java.applet.Applet implements Runnable {
 +"g.fillOval(300, 310, 30, 50);"
 +"g.fillRect(400, 350, 60, 50);"
 +"g.setColor(Color.BLACK);"
++"g.setFont(counter_font);"
 +"g.drawString(String.valueOf(frames), frames, 40);"
 +"}"
 );
