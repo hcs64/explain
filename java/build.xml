@@ -7,6 +7,7 @@
     <property name="classes.dir"    value="${build.dir}/classes"/>
     <property name="jar.dir"        value="${build.dir}/jar"/>
     <property name="lib.dir"        value="lib"/>
+    <property name="install.dir"    value="/home/etherpad-lite/etherpad-lite/src/static/${ant.project.name}"/>
 
     <path id="classpath">
         <fileset dir="${lib.dir}" includes="**/*.jar"/>
@@ -29,6 +30,14 @@
     <target name="jar" depends="compile">
         <mkdir dir="${jar.dir}"/>
         <jar destfile="${jar.dir}/${ant.project.name}.jar" basedir="${classes.dir}"/>
+    </target>
+
+    <target name="install" depends="jar">
+        <copy todir="${install.dir}">
+            <fileset dir="${lib.dir}" includes="**/*.jar"/>
+            <filelist dir="." files="${ant.project.name}.html"/>
+            <filelist dir="${jar.dir}" files="${ant.project.name}.jar"/>
+        </copy>
     </target>
 
 </project>

@@ -435,7 +435,7 @@ final class Reflect {
 			// This is the first time we've seen this method, set accessibility
 			// Note: even if it's a public method, we may have found it in a
 			// non-public class
-			if (method != null && (!publicOnly || isPublic(method))) {
+			if (method != null && !publicOnly) {
 				method.setAccessible(true);
 			}
 
