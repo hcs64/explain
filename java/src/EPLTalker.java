@@ -27,7 +27,7 @@ public class EPLTalker {
     private volatile String server_text;
     private volatile JSONObject client_vars = null; // state from the server
 
-    private String path;
+    private URL url;
     private String session_token;
     private String token;
     private String client_id;
@@ -36,8 +36,8 @@ public class EPLTalker {
 
     private SocketIO socket = null;
 
-    public EPLTalker(String path, String client_id, String token, String pad_id) {
-        this.path = path;
+    public EPLTalker(URL url, String client_id, String token, String pad_id) {
+        this.url = url;
 
         if (token == null) {
             token = "t." + randomString();
@@ -66,11 +66,10 @@ public class EPLTalker {
     }
 
 
-    public static String getSessionToken(String path) throws IOException, MalformedURLException, EPLTalkerException {
+    public static String getSessionToken(URL url) throws IOException, MalformedURLException, EPLTalkerException {
         // a really dumb HTTP client so Sun's HttpURLConnection doesn't eat the Set-Cookie
         final String set_cookie = "Set-Cookie: ";
-        URL http_url = new URL(path);
-        Socket http_socket = new Socket(http_url.getHost(), http_url.getPort());
+        Socket http_socket = new Socket(url.getHost(), url.getPort());
 
         OutputStream http_out = http_socket.getOutputStream();
         byte[] http_req = "GET / HTTP/1.0\r\n\r\n".getBytes();
@@ -121,10 +120,10 @@ public class EPLTalker {
             throw new EPLTalkerException("can't connect again");
         }
 
-        socket = new SocketIO(path);
+        socket = new SocketIO(url);
 
         client_state = GETTING_SESSION_TOKEN;
-        session_token = getSessionToken(path);
+        session_token = getSessionToken(url);
         client_state = GOT_SESSION_TOKEN;
         socket.addHeader("Cookie", session_token);
 

@@ -30,7 +30,7 @@ public class AwtTest extends java.applet.Applet implements Runnable {
 
         GraphicsWrapper.exposeTo(bsh.getClassManager());
 
-        epl = new EPLTalker("http://"+getCodeBase().getHost()+":9001", "", null, "testpad");
+        epl = new EPLTalker(getCodeBase(), "", null, "testpad");
         try {
             epl.connect();
         } catch (MalformedURLException e) {
