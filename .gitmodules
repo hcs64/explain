@@ -1,3 +1,6 @@
 [submodule "java/external/java-etherpad-lite"]
 	path = java/external/java-etherpad-lite
 	url = git://github.com/hcs64/java-etherpad-lite.git
+[submodule "java/external/socketio"]
+	path = java/external/socketio
+	url = git@github.com:Gottox/socket.io-java-client.git

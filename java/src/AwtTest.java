@@ -1,5 +1,6 @@
 import java.awt.*;
 import java.util.HashMap;
+import java.io.IOException;
 import java.net.MalformedURLException;
 import bsh.Interpreter;
 import bsh.EvalError;
@@ -30,6 +31,15 @@ public class AwtTest extends java.applet.Applet implements Runnable {
         bsh = new Interpreter();
 
         GraphicsWrapper.exposeTo(bsh.getClassManager());
+
+        EPLTalker epl = new EPLTalker("http://"+getCodeBase().getHost()+":9001", "", null, "testpad");
+        try {
+            epl.connect();
+        } catch (MalformedURLException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
         try {
             ether = new EPLiteClient("http://"+getCodeBase().getHost()+":9001", "rEn0BtUbEroqyJMIQpsqexEadj9IJuoP");
