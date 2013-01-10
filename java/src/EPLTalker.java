@@ -145,6 +145,7 @@ public class EPLTalker {
             @Override
             public void onDisconnect() {
                 System.out.println("Connection terminated.");
+                markDisconnected();
             }
 
             @Override
@@ -168,6 +169,8 @@ public class EPLTalker {
 
         client_state = CONNECTING;
     }
+
+
     private synchronized void sendClientReady() throws JSONException, EPLTalkerException {
         if (client_state != CONNECTING) {
             throw new EPLTalkerException("sendClientReady in unexpected state "+client_state);
@@ -188,6 +191,11 @@ public class EPLTalker {
         socket.send(client_ready_json);
 
         client_state = SENT_CLIENT_READY;
+    }
+
+    private synchronized void markDisconnected() {
+        client_state = NO_CONNECTION;
+        notifyAll();
     }
 
     private synchronized void markNew() {
@@ -265,6 +273,9 @@ public class EPLTalker {
 
             System.out.println("received changeset: '"+data.getString("changeset")+"'");
         } else if ("USER_NEWINFO".equals(collab_type)) {
+            // ignore this for now
+
+        } else if ("USER_LEAVE".equals(collab_type)) {
             // ignore this for now
 
         } else {
