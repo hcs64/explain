@@ -91,21 +91,18 @@ public class EPLTalker {
     private void handleIncomingMessage(JSONObject json) throws JSONException, EPLTalkerException {
         String type = json.getString("type");
 
-        System.out.print("type="+type+", keys: ");
-
-        for (Iterator i = json.keys(); i.hasNext(); ) {
-            String k = (String) i.next();
-            System.out.print("'"+k+"' ");
-        }
-        System.out.println();
-
-        if (type.equals("CLIENT_VARS")) {
+        if ("CLIENT_VARS".equals(type)) {
             setClientVars(json);
-        } else if (type.equals("COLLABROOM")) {
+        } else if ("COLLABROOM".equals(type)) {
             handleCollabRoom(json);
         } else {
             // unhandled message type
-            System.out.println("unknown message type: " + type);
+            System.out.print("unknown message type: " + type + ", keys: ");
+            for (Iterator i = json.keys(); i.hasNext(); ) {
+                String k = (String) i.next();
+                System.out.print("'"+k+"' ");
+            }
+            System.out.println();
         }
     }
 
@@ -263,10 +260,13 @@ public class EPLTalker {
         String collab_type = data.getString("type");
 
 
-        if (collab_type.equals("NEW_CHANGES")) {
+        if ("NEW_CHANGES".equals(collab_type)) {
             markNew();
 
             System.out.println("received changeset: '"+data.getString("changeset")+"'");
+        } else if ("USER_NEWINFO".equals(collab_type)) {
+            // ignore this for now
+
         } else {
             System.out.println("unsupported COLLABROOM message type = " + collab_type);
         }
