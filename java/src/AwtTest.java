@@ -2,6 +2,7 @@ import java.awt.*;
 import java.util.HashMap;
 import java.io.IOException;
 import java.net.MalformedURLException;
+import java.net.URL;
 import bsh.Interpreter;
 import bsh.EvalError;
 import bsh.BshClassManager;
@@ -30,8 +31,9 @@ public class AwtTest extends java.applet.Applet implements Runnable {
 
         GraphicsWrapper.exposeTo(bsh.getClassManager());
 
-        epl = new EPLTalker(getCodeBase(), "", null, "testpad");
+        URL codeBase = getCodeBase();
         try {
+            epl = new EPLTalker(new URL(codeBase.getProtocol(), codeBase.getHost(), codeBase.getPort(), ""), "", null, "testpad");
             epl.connect();
         } catch (MalformedURLException e) {
             e.printStackTrace();
@@ -113,6 +115,7 @@ public class AwtTest extends java.applet.Applet implements Runnable {
 
     public void paint(Graphics g) {
         if (buffer_image == null || getBounds().width != r.width || getBounds().height != r.height) {
+
             buffer_image = createImage(getBounds().width, getBounds().height);
             buffer_graphics = buffer_image.getGraphics();
 
