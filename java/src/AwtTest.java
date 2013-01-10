@@ -5,8 +5,6 @@ import java.net.MalformedURLException;
 import bsh.Interpreter;
 import bsh.EvalError;
 import bsh.BshClassManager;
-import org.etherpad_lite_client.EPLiteClient;
-import org.etherpad_lite_client.EPLiteException;
 
 public class AwtTest extends java.applet.Applet implements Runnable {
     Color c1, c2;
@@ -19,7 +17,6 @@ public class AwtTest extends java.applet.Applet implements Runnable {
     Graphics buffer_graphics;
     Rectangle r = new Rectangle(0,0,0,0);
     String code;
-    EPLiteClient ether;
 
     public void init() {
         running = true;
@@ -39,29 +36,15 @@ public class AwtTest extends java.applet.Applet implements Runnable {
             e.printStackTrace();
         } catch (IOException e) {
             e.printStackTrace();
-        }
-
-        try {
-            ether = new EPLiteClient("http://"+getCodeBase().getHost()+":9001", "rEn0BtUbEroqyJMIQpsqexEadj9IJuoP");
-        } catch (MalformedURLException e) {
+        } catch (EPLTalkerException e) {
             e.printStackTrace();
         }
 
-        if (ether.checkToken()) {
-            try {
-                HashMap codeMap = ether.getText("testpad");
-                code = (String)codeMap.get("text");
-                
-            } catch (EPLiteException e) {
-                // on an error code will be left null
-                System.err.println("failed getting pad, starting anew");
-            }
-            System.out.println(code);
-            //code = null;
+        if (epl.waitForNew()) {
+            code = epl.getText();
         }
         else {
-            System.err.println("checkToken failed, not using EP");
-            ether = null;
+            System.err.println("failed getting pad, starting anew");
         }
 
         if (code == null) {
@@ -85,9 +68,6 @@ public class AwtTest extends java.applet.Applet implements Runnable {
 +"g.setFont(counter_font);"
 +"g.drawString(String.valueOf(frames), frames, 40);"
 +"}";
-            if (ether != null) {
-                ether.setText("testpad", code);
-            }
         }
 
         try {

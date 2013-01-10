@@ -1,21 +1,36 @@
 import io.socket.*;
 import org.json.*;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.io.IOException;
 import java.net.URL;
 import java.net.MalformedURLException;
 import java.net.HttpURLConnection;
 
-// class for maintaining a connection to an Etherpad Lite server
+// class for talking to an Etherpad Lite server
 
 public class EPLTalker {
+    // client states
+    static final int NO_CONNECTION          = 1;
+    static final int GETTING_SESSION_TOKEN  = 2;
+    static final int GOT_SESSION_TOKEN      = 3;
+    static final int CONNECTING             = 4;
+    static final int SENT_CLIENT_READY      = 5;
+    static final int GOT_VARS               = 6;    // a normal connected state
+
+    private volatile int client_state;
+    private volatile boolean new_data;
+    private volatile String server_text;
+    private volatile JSONObject client_vars = null; // state from the server
+
     private String path;
     private String session_token;
     private String token;
     private String client_id;
     private String pad_id;
 
-    SocketIO socket = null;
+
+    private SocketIO socket = null;
 
     public EPLTalker(String path, String client_id, String token, String pad_id) {
         this.path = path;
@@ -27,64 +42,101 @@ public class EPLTalker {
         this.token = token;
         this.client_id = client_id;
         this.pad_id = pad_id;
+
+        this.client_state = NO_CONNECTION;
+        this.new_data = false;
     }
 
-    private String randomString() {
+    // adapted from Etherpad Lite's JS
+    public static String randomString() {
         final String chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
         final int string_length = 20;
-        String randomstring = "";
+        StringBuilder randomstring = new StringBuilder(string_length);
 
         for (int i = 0; i < string_length; i++)
         {
             int rnum = (int) Math.floor(Math.random() * chars.length());
-            randomstring += chars.substring(rnum, rnum + 1);
+            randomstring.append(chars.charAt(rnum));
         }
-        return randomstring;
-}
+        return randomstring.toString();
+    }
 
 
-
-    private String getSessionToken() throws IOException, MalformedURLException {
+    public static String getSessionToken(String path) throws IOException, MalformedURLException, EPLTalkerException {
         HttpURLConnection http = (HttpURLConnection) new URL(path).openConnection();
 
-        String field = null;
+        try {
+            String field = null;
 
-        for (int i = 0; (field = http.getHeaderField(i)) != null; i++) {
-            String key = http.getHeaderFieldKey(i);
-            if (key != null && key.equals("Set-Cookie")) {
-                String[] entries = field.split(";");
-                for (String entry : entries) {
-                    String[] keyval = entry.split("=");
-                    if (keyval.length == 2 && keyval[0].equals("express_sid")) {
-                        return entry;
+            for (int i = 0; (field = http.getHeaderField(i)) != null; i++) {
+                String key = http.getHeaderFieldKey(i);
+                if (key != null && key.equals("Set-Cookie")) {
+                    String[] entries = field.split(";");
+                    for (String entry : entries) {
+                        String[] keyval = entry.split("=");
+                        if (keyval.length == 2 && keyval[0].equals("express_sid")) {
+                            return entry;
+                        }
                     }
                 }
             }
         }
+        finally {
+            http.disconnect();
+        }
 
-        http.disconnect();
-        return "";
+        throw new EPLTalkerException("no express_sid found");
     }
 
-    public void connect() throws IOException, MalformedURLException {
+    private void handleIncomingMessage(JSONObject json) throws JSONException, EPLTalkerException {
+        String type = json.getString("type");
+
+        System.out.print("type="+type+", keys: ");
+
+        for (Iterator i = json.keys(); i.hasNext(); ) {
+            String k = (String) i.next();
+            System.out.print("'"+k+"' ");
+        }
+        System.out.println();
+
+        if (type.equals("CLIENT_VARS")) {
+            setClientVars(json);
+        } else if (type.equals("COLLABROOM")) {
+            handleCollabRoom(json);
+        } else {
+            // unhandled message type
+            System.out.println("unknown message type: " + type);
+        }
+    }
+
+
+    public synchronized void connect() throws IOException, MalformedURLException, EPLTalkerException {
+        if (client_state != NO_CONNECTION) {
+            throw new EPLTalkerException("can't connect again");
+        }
+
         socket = new SocketIO(path);
 
-        session_token = getSessionToken();
+        client_state = GETTING_SESSION_TOKEN;
+        session_token = getSessionToken(path);
+        client_state = GOT_SESSION_TOKEN;
         socket.addHeader("Cookie", session_token);
 
         socket.connect(new IOCallback() {
             @Override
             public void onMessage(JSONObject json, IOAcknowledge ack) {
                 try {
-                    System.out.println("Server said:" + json.toString(2));
+                    handleIncomingMessage(json);
                 } catch (JSONException e) {
+                    e.printStackTrace();
+                } catch (EPLTalkerException e) {
                     e.printStackTrace();
                 }
             }
 
             @Override
             public void onMessage(String data, IOAcknowledge ack) {
-                System.out.println("Server said: " + data);
+                System.out.println("Server sent string: " + data);
             }
 
             @Override
@@ -102,6 +154,28 @@ public class EPLTalker {
             public void onConnect() {
                 System.out.println("Connection established.");
 
+                try {
+                    sendClientReady();
+                } catch (JSONException e) {
+                    e.printStackTrace();
+                } catch (EPLTalkerException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            @Override
+            public void on(String event, IOAcknowledge ack, Object... args) {
+                System.out.println("Server triggered event '" + event + "'");
+            }
+        });
+
+        client_state = CONNECTING;
+    }
+    private synchronized void sendClientReady() throws JSONException, EPLTalkerException {
+        if (client_state != CONNECTING) {
+            throw new EPLTalkerException("sendClientReady in unexpected state "+client_state);
+        }
+
         HashMap client_ready_req = new HashMap<String, Object>() {{
             put("component", "pad");
             put("type", "CLIENT_READY");
@@ -111,16 +185,91 @@ public class EPLTalker {
             put("password", null);
             put("protocolVersion", 2);
         }};
+
         JSONObject client_ready_json = new JSONObject(client_ready_req);
 
         socket.send(client_ready_json);
-            }
 
-            @Override
-            public void on(String event, IOAcknowledge ack, Object... args) {
-                System.out.println("Server triggered event '" + event + "'");
-            }
-        });
+        client_state = SENT_CLIENT_READY;
+    }
+
+    private synchronized void markNew() {
+        new_data = true;
+        notifyAll();
+    }
+
+    public synchronized boolean hasNew() {
+        return new_data;
+    }
+
+    public boolean clientOK() {
+        int state = client_state;
+        return !(state == NO_CONNECTION);
+    }
+
+    public synchronized boolean waitForNew() {
+        while (!new_data && clientOK()) {
+            try {
+                wait();
+            } catch (InterruptedException e) {}
+        }
+
+        return new_data;
+    }
+
+    public synchronized boolean waitForNew(long timeout_ms) {
+        long start_time = System.currentTimeMillis();
+
+        while (!new_data && clientOK() &&
+               start_time+timeout_ms < System.currentTimeMillis()) {
+            try {
+                wait();
+            } catch (InterruptedException e) {}
+        }
+
+        return new_data;
+    }
+
+    public synchronized String getText() {
+        new_data = false;
+
+        return server_text;
+    }
+
+    private void setClientVars(JSONObject json) throws JSONException, EPLTalkerException {
+        if (client_state != SENT_CLIENT_READY) {
+            throw new EPLTalkerException("setClientVars in unexpected state "+client_state);
+        }
+
+        client_state = GOT_VARS;
+        client_vars = json.getJSONObject("data");
+
+        JSONObject collab_client_vars = client_vars.getJSONObject("collab_client_vars");
+
+        JSONObject initial_attributed_text = collab_client_vars.getJSONObject("initialAttributedText");
+
+        server_text = initial_attributed_text.getString("text");
+
+        markNew();
+    }
+
+    // most of the action is in here
+    private synchronized void handleCollabRoom(JSONObject json) throws JSONException, EPLTalkerException {
+        if (client_state != GOT_VARS) {
+            throw new EPLTalkerException("handleCollabRoom in unexpected state "+client_state);
+        }
+
+        JSONObject data = json.getJSONObject("data");
+        String collab_type = data.getString("type");
+
+
+        if (collab_type.equals("NEW_CHANGES")) {
+            markNew();
+
+            System.out.println("received changeset: '"+data.getString("changeset")+"'");
+        } else {
+            System.out.println("unsupported COLLABROOM message type = " + collab_type);
+        }
 
     }
 }
