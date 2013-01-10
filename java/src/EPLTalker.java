@@ -273,6 +273,10 @@ public class EPLTalker {
             
             try {
                 cs  = new EPLChangeset(data.getString("changeset"));
+
+                server_text = cs.applyToText(server_text);
+
+                System.out.println("new:\n"+server_text);
             } catch (EPLChangesetException e) {
                 System.out.println(e.toString());
             }
