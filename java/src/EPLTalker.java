@@ -5,7 +5,11 @@ import java.util.Iterator;
 import java.io.IOException;
 import java.net.URL;
 import java.net.MalformedURLException;
-import java.net.HttpURLConnection;
+import java.net.Socket;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.BufferedReader;
+import java.io.OutputStream;
 
 // class for talking to an Etherpad Lite server
 
@@ -63,26 +67,31 @@ public class EPLTalker {
 
 
     public static String getSessionToken(String path) throws IOException, MalformedURLException, EPLTalkerException {
-        HttpURLConnection http = (HttpURLConnection) new URL(path).openConnection();
+        // a really dumb HTTP client so Sun's HttpURLConnection doesn't eat the Set-Cookie
+        final String set_cookie = "Set-Cookie: ";
+        URL http_url = new URL(path);
+        Socket http_socket = new Socket(http_url.getHost(), http_url.getPort());
 
-        try {
-            String field = null;
+        OutputStream http_out = http_socket.getOutputStream();
+        byte[] http_req = "GET / HTTP/1.0\r\n\r\n".getBytes();
+        http_out.write(http_req);
+        http_out.flush();
 
-            for (int i = 0; (field = http.getHeaderField(i)) != null; i++) {
-                String key = http.getHeaderFieldKey(i);
-                if (key != null && key.equals("Set-Cookie")) {
-                    String[] entries = field.split(";");
-                    for (String entry : entries) {
-                        String[] keyval = entry.split("=");
-                        if (keyval.length == 2 && keyval[0].equals("express_sid")) {
-                            return entry;
-                        }
+        InputStream http_in_stream = http_socket.getInputStream();
+        InputStreamReader http_in_reader = new InputStreamReader(http_in_stream);
+        BufferedReader http_bufreader = new BufferedReader(http_in_reader);
+        String line;
+
+        while ((line = http_bufreader.readLine()) != null) {
+            if (line.startsWith(set_cookie)) {
+                String[] entries = line.substring(set_cookie.length()).split("; ");
+                for (String entry : entries) {
+                    String[] keyval = entry.split("=");
+                    if (keyval.length == 2 && keyval[0].equals("express_sid")) {
+                        return entry;
                     }
                 }
             }
-        }
-        finally {
-            http.disconnect();
         }
 
         throw new EPLTalkerException("no express_sid found");
