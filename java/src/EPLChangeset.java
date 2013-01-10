@@ -162,7 +162,6 @@ public class EPLChangeset {
 
         for (OpEnumeration oe = opEnumeration(); oe.hasMoreElements(); ) {
             Operation o = (Operation) oe.nextElement();
-            //System.out.println("attribs=" + o.attribs + " lines=" + o.lines + " opcode=" + o.opcode + " chars=" + o.chars);
 
             switch (o.opcode) {
                 case '=':

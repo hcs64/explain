@@ -17,6 +17,7 @@ public class AwtTest extends java.applet.Applet implements Runnable {
     Graphics buffer_graphics;
     Rectangle r = new Rectangle(0,0,0,0);
     String code;
+    EPLTalker epl;
 
     public void init() {
         running = true;
@@ -29,7 +30,7 @@ public class AwtTest extends java.applet.Applet implements Runnable {
 
         GraphicsWrapper.exposeTo(bsh.getClassManager());
 
-        EPLTalker epl = new EPLTalker("http://"+getCodeBase().getHost()+":9001", "", null, "testpad");
+        epl = new EPLTalker("http://"+getCodeBase().getHost()+":9001", "", null, "testpad");
         try {
             epl.connect();
         } catch (MalformedURLException e) {
@@ -116,6 +117,23 @@ public class AwtTest extends java.applet.Applet implements Runnable {
             buffer_graphics = buffer_image.getGraphics();
 
             r = getBounds();
+        }
+
+        if (epl.hasNew()) {
+            String newcode = epl.getText();
+
+            try {
+                bsh.eval(newcode);
+
+                code = newcode;
+            } catch (EvalError e) {
+            }
+
+            try {
+                bsh.eval(code);
+            } catch (EvalError r) {
+                return;
+            }
         }
 
         GraphicsWrapper gw = new GraphicsWrapper(buffer_graphics);
