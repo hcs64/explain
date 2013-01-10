@@ -269,9 +269,15 @@ public class EPLTalker {
 
 
         if ("NEW_CHANGES".equals(collab_type)) {
-            markNew();
+            EPLChangeset cs;
+            
+            try {
+                cs  = new EPLChangeset(data.getString("changeset"));
+            } catch (EPLChangesetException e) {
+                System.out.println(e.toString());
+            }
 
-            System.out.println("received changeset: '"+data.getString("changeset")+"'");
+            markNew();
         } else if ("USER_NEWINFO".equals(collab_type)) {
             // ignore this for now
 
