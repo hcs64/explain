@@ -70,7 +70,7 @@ public class EPLTalker {
         socket = new SocketIO(path);
 
         session_token = getSessionToken();
-        socket.addHeader("Cookie", session_token + ";token=" + token);
+        socket.addHeader("Cookie", session_token);
 
         socket.connect(new IOCallback() {
             @Override
