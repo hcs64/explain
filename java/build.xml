@@ -36,7 +36,7 @@
 
     <target name="install" depends="jar">
         <copy todir="${install.dir}">
-            <filelist dir="." files="${ant.project.name}.html"/>
+            <filelist dir="${src.dir}" files="${ant.project.name}.html"/>
             <filelist dir="${jar.dir}" files="${ant.project.name}.jar"/>
         </copy>
     </target>
