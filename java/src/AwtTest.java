@@ -8,23 +8,24 @@ import bsh.EvalError;
 import bsh.BshClassManager;
 
 public class AwtTest extends java.applet.Applet implements Runnable {
-    Color c1, c2;
     volatile boolean running = false;
     boolean animating = false;
 
+    public interface Renderable {
+        public void render(GraphicsWrapper gw);
+    };
+
     Interpreter bsh;
+    Renderable bsh_renderable;
     Thread t;
     Image buffer_image;
     Graphics buffer_graphics;
     Rectangle r = new Rectangle(0,0,0,0);
+    String fallback_code;
     String code;
     EPLTalker epl;
 
     public void init() {
-        running = true;
-        t = new Thread(this);
-        t.start();
-
         buffer_image = null;
 
         bsh = new Interpreter();
@@ -43,43 +44,32 @@ public class AwtTest extends java.applet.Applet implements Runnable {
             e.printStackTrace();
         }
 
-        if (epl.waitForNew()) {
-            code = epl.getText();
-        }
-        else {
-            System.err.println("failed getting pad, starting anew");
-        }
+        fallback_code = ""
++"import GraphicsWrapper;\n"
++"import java.awt.Color;\n"
++"import java.awt.Font;\n"
++"int frames = 0;\n"
++"Font counter_font = new Font(\"Monospaced\", Font.PLAIN, 15);\n"
++"public void render(GraphicsWrapper g) {\n"
++"float red = (Math.sin(frames/10.)+1)/2;\n"
++"g.clearRect(0,0,640,480);\n"
++"g.setColor(Color.BLUE);\n"
++"g.drawLine(frames++, 40, 100, 200);\n"
++"g.drawOval(150, 180, 10, 10);\n"
++"g.drawRect(200, 210, 20, 30);\n"
++"g.setColor(new Color(red,red,red));\n"
++"g.fillOval(300, 310, 30, 50);\n"
++"g.fillRect(400, 350, 60, 50);\n"
++"g.setColor(Color.BLACK);\n"
++"g.setFont(counter_font);\n"
++"g.drawString(String.valueOf(frames), frames, 40);\n"
++"}\n";
 
-        if (code == null) {
-            code = ""
-+"import GraphicsWrapper;"
-+"import java.awt.Color;"
-+"import java.awt.Font;"
-+"int frames = 0;"
-+"Font counter_font = new Font(\"Monospaced\", Font.PLAIN, 15);"
-+"public void render(GraphicsWrapper g) {"
-+"float red = (Math.sin(frames/10.)+1)/2;"
-+"g.clearRect(0,0,640,480);"
-+"g.setColor(c1);"
-+"g.drawLine(frames++, 40, 100, 200);"
-+"g.drawOval(150, 180, 10, 10);"
-+"g.drawRect(200, 210, 20, 30);"
-+"g.setColor(new Color(red,red,red));"
-+"g.fillOval(300, 310, 30, 50);"
-+"g.fillRect(400, 350, 60, 50);"
-+"g.setColor(Color.BLACK);"
-+"g.setFont(counter_font);"
-+"g.drawString(String.valueOf(frames), frames, 40);"
-+"}";
-        }
+        code = "public void render(GraphicsWrapper) {}";
 
-        try {
-            bsh.eval(code);
-        } catch (EvalError e) {
-            e.printStackTrace();
-            running = false;
-            return;
-        }
+        running = true;
+        t = new Thread(this);
+        t.start();
 
     }
 
@@ -91,9 +81,6 @@ public class AwtTest extends java.applet.Applet implements Runnable {
     }
 
     public void start() {
-        c1 = Color.BLACK;
-        c2 = Color.RED;
-
     }
 
     public void stop() {
@@ -122,36 +109,68 @@ public class AwtTest extends java.applet.Applet implements Runnable {
             r = getBounds();
         }
 
-        if (epl.hasNew()) {
-            String newcode = epl.getText();
-
-            try {
-                bsh.eval(newcode);
-
-                code = newcode;
-            } catch (EvalError e) {
-            }
-
-            try {
-                bsh.eval(code);
-            } catch (EvalError r) {
-                return;
-            }
-        }
-
         GraphicsWrapper gw = new GraphicsWrapper(buffer_graphics);
 
-        try {
-            bsh.set("gw", gw);
-            bsh.set("c1", c1);
-            bsh.eval("render(gw)");
-        } catch (EvalError e) {
-            e.printStackTrace();
-
-            running = false;
-            return;
+        if (epl.hasNew()) {
+            tryRenderNewCode(epl.getText(), gw);
+        } else {
+            try {
+                bsh.set("gw", gw);
+                bsh_renderable.render(gw);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
 
         g.drawImage(buffer_image, 0, 0, this);
+    }
+
+    private void tryEvalNewCode(String newcode) {
+        try {
+            bsh.eval(newcode);
+            bsh_renderable = (Renderable) bsh.getInterface(Renderable.class);
+            code = newcode;
+
+        } catch (EvalError e) {
+            System.out.println("eval-time exception "+e.toString()+", not accepting:\n" + code);
+            e.printStackTrace();
+
+            try {
+                code = fallback_code;
+                bsh.eval(code);
+                bsh_renderable = (Renderable) bsh.getInterface(Renderable.class);
+            } catch (EvalError e2) {
+                System.err.println("unexpected error eval'ing fallback");
+                e2.printStackTrace();
+            }
+        }
+    }
+
+    private void tryRenderNewCode(String newcode, GraphicsWrapper gw) {
+        tryEvalNewCode(newcode);
+
+        try {
+            bsh.set("gw", gw);
+            bsh_renderable.render(gw);
+
+            // rendered ok, save as fallback
+            fallback_code = code;
+        } catch (Exception e) {
+            // any runtime exception prevents us from accepting the new code
+            //e.printStackTrace();
+
+            System.out.println("runtime exception "+e.toString()+", not accepting:\n" + code);
+            code = fallback_code;
+
+            try {
+                bsh.eval(code);
+                bsh_renderable = (Renderable) bsh.getInterface(Renderable.class);
+                bsh.set("gw", gw);
+                bsh_renderable.render(gw);
+            } catch (EvalError e2) {
+                System.err.println("unexpected error eval'ing fallback");
+                e2.printStackTrace();
+            }
+        }
     }
 }
