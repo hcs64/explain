@@ -21,6 +21,8 @@ public class AwtTest extends java.applet.Applet implements Runnable {
     Image buffer_image;
     Graphics buffer_graphics;
     Rectangle r = new Rectangle(0,0,0,0);
+
+    String pad_name;
     String fallback_code;
     String code;
     EPLTalker epl;
@@ -32,9 +34,14 @@ public class AwtTest extends java.applet.Applet implements Runnable {
 
         GraphicsWrapper.exposeTo(bsh.getClassManager());
 
+        pad_name = getParameter("pad_name");
+        if (pad_name == null) {
+            pad_name = "testpad";
+        }
+
         URL codeBase = getCodeBase();
         try {
-            epl = new EPLTalker(new URL(codeBase.getProtocol(), codeBase.getHost(), codeBase.getPort(), ""), "", null, "testpad");
+            epl = new EPLTalker(new URL(codeBase.getProtocol(), codeBase.getHost(), codeBase.getPort(), ""), "", null, pad_name);
             epl.connect();
         } catch (MalformedURLException e) {
             e.printStackTrace();
@@ -159,9 +166,10 @@ public class AwtTest extends java.applet.Applet implements Runnable {
             fallback_code = code;
         } catch (Exception e) {
             // any runtime exception prevents us from accepting the new code
-            //e.printStackTrace();
 
             System.out.println("runtime exception "+e.toString()+", not accepting:\n" + code);
+            e.printStackTrace();
+
             code = fallback_code;
 
             try {

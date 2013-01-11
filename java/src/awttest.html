@@ -3,6 +3,13 @@
 <html>
 <head>
 
+<script>
+var pad_name = window.location.search.substring(1);
+if (!pad_name) {
+    pad_name = 'testpad';
+}
+</script>
+
 <title>i.e.j.</title>
 <style type="text/css" media="screen">
 *{
@@ -31,6 +38,11 @@ html,body {
     width:50%;
 }
 
+iframe {
+    width:100%;
+    height:100%;
+}
+
 </style>
 
 </head><body>
@@ -38,11 +50,28 @@ html,body {
 <object id='awt_applet' type="application/x-java-applet" style="width:100%; height:100%;">
 <param name="code" value="AwtTest" />
 <param name="archive" value="awttest.jar" />
+
+<script>
+(function () {
+    var param = document.createElement('param');
+    param.name = 'pad_name';
+    param.value = pad_name;
+
+    document.getElementById('awt_applet').appendChild(param);
+})();
+</script>
 </object>
 </div>
 
 <div id="right_div">
-<iframe id='epl_iframe' src='http://128.122.47.109:9001/p/testpad?showControls=false&showChat=false&showLineNumbers=true&useMonospaceFont=true' style="width:100%; height:100%;"></iframe>
+<script>
+(function () {
+var iframe = document.createElement('iframe');
+iframe.setAttribute('id', 'epl_iframe');
+iframe.src      = '/p/'+pad_name+'?showControls=false&showChat=false&showLineNumbers=true&useMonospaceFont=true';
+document.getElementById('right_div').appendChild(iframe);
+})();
+</script>
 </div>
 
 </body></html>
