@@ -10,7 +10,7 @@
 		- Why can't I nest filesets?  This seems like it would be so easy and
 		useful...
 -->
-<project name="BeanShell2" default="jarcore" basedir=".">
+<project name="BeanShell2" default="jarcore-n-classpath" basedir=".">
 
 <!-- Project Configuration -->
 
@@ -92,6 +92,7 @@
 	<!-- JARs -->
 	<property name="javadoc-zip" value="${dist-dir}/bsh-${version}-javadoc.zip"/>
 	<property name="core-jar" value="${dist-dir}/bsh-core-${version}.jar"/>
+	<property name="core-n-classpath-jar" value="${dist-dir}/bsh-core-n-classpath-${version}.jar"/>
 	<property name="src-zip" value="${dist-dir}/bsh-${version}-src.zip"/>
 	<property name="all-jar-name" value="bsh-${version}.jar"/>
 	<property name="all-jar" value="${dist-dir}/${all-jar-name}"/>
@@ -386,6 +387,30 @@
 			</manifest>
             <service type="javax.script.ScriptEngineFactory" provider="bsh.BshScriptEngineFactory"/>
 			<fileset refid="core-fileset"/>
+		</jar>
+	</target>
+
+	<target name="jarcore-n-classpath" depends="compile,_distdir">
+        <fail message="Please use ant 1.8">
+            <condition>
+                <not>
+                    <contains string="${ant.version}" substring="1.8"/>
+                </not>
+            </condition>
+        </fail>
+    <delete file="${core-n-clasapth-jar}"/>
+		<jar jarfile="${core-n-classpath-jar}">
+			<manifest>
+				<attribute name="Main-Class" value="bsh.Interpreter" />
+				<attribute name="Specification-Title" value="BeanShell2 core and classpath" />
+				<attribute name="Specification-Version" value="${version}" />
+				<attribute name="Specification-Vendor" value="${Specification-Vendor}" />
+				<attribute name="Implementation-Version" value="${version} ${DATE}" />
+				<attribute name="Implementation-Vendor" value="${Implementation-Vendor}" />
+			</manifest>
+            <service type="javax.script.ScriptEngineFactory" provider="bsh.BshScriptEngineFactory"/>
+			<fileset refid="core-fileset"/>
+			<fileset refid="classpath-fileset"/>
 		</jar>
 	</target>
 
