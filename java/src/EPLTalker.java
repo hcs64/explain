@@ -15,16 +15,19 @@ import java.io.OutputStream;
 
 public class EPLTalker {
     // client states
-    static final int NO_CONNECTION          = 1;
-    static final int GETTING_SESSION_TOKEN  = 2;
-    static final int GOT_SESSION_TOKEN      = 3;
-    static final int CONNECTING             = 4;
-    static final int SENT_CLIENT_READY      = 5;
-    static final int GOT_VARS               = 6;    // a normal connected state
+    enum ClientConnectState {
+        NO_CONNECTION,
+        GETTING_SESSION_TOKEN,
+        GOT_SESSION_TOKEN,
+        CONNECTING,
+        SENT_CLIENT_READY,
+        GOT_VARS            // a normal connected state
+    }
+    private ClientConnectState client_connect_state;
 
-    private volatile int client_state;
-    private volatile boolean new_data;
-    private volatile String server_text;
+    private boolean has_new_data;
+    private EPLTextState server_state;
+
     private volatile JSONObject client_vars = null; // state from the server
 
     private URL url;
@@ -32,7 +35,6 @@ public class EPLTalker {
     private String token;
     private String client_id;
     private String pad_id;
-
 
     private SocketIO socket = null;
 
@@ -47,8 +49,10 @@ public class EPLTalker {
         this.client_id = client_id;
         this.pad_id = pad_id;
 
-        this.client_state = NO_CONNECTION;
-        this.new_data = false;
+        client_connect_state = ClientConnectState.NO_CONNECTION;
+        has_new_data = false;
+
+        server_state = null;
     }
 
     // adapted from Etherpad Lite's JS
@@ -116,15 +120,15 @@ public class EPLTalker {
 
 
     public synchronized void connect() throws IOException, MalformedURLException, EPLTalkerException {
-        if (client_state != NO_CONNECTION) {
+        if (client_connect_state != ClientConnectState.NO_CONNECTION) {
             throw new EPLTalkerException("can't connect again");
         }
 
         socket = new SocketIO(url);
 
-        client_state = GETTING_SESSION_TOKEN;
+        client_connect_state = ClientConnectState.GETTING_SESSION_TOKEN;
         session_token = getSessionToken(url);
-        client_state = GOT_SESSION_TOKEN;
+        client_connect_state = ClientConnectState.GOT_SESSION_TOKEN;
         socket.addHeader("Cookie", session_token);
 
         socket.connect(new IOCallback() {
@@ -175,13 +179,13 @@ public class EPLTalker {
             }
         });
 
-        client_state = CONNECTING;
+        client_connect_state = ClientConnectState.CONNECTING;
     }
 
 
     private synchronized void sendClientReady() throws JSONException, EPLTalkerException {
-        if (client_state != CONNECTING) {
-            throw new EPLTalkerException("sendClientReady in unexpected state "+client_state);
+        if (client_connect_state != ClientConnectState.CONNECTING) {
+            throw new EPLTalkerException("sendClientReady in unexpected state "+client_connect_state);
         }
 
         HashMap client_ready_req = new HashMap<String, Object>() {{
@@ -198,95 +202,81 @@ public class EPLTalker {
 
         socket.send(client_ready_json);
 
-        client_state = SENT_CLIENT_READY;
+        client_connect_state = ClientConnectState.SENT_CLIENT_READY;
     }
 
     private synchronized void markDisconnected() {
-        client_state = NO_CONNECTION;
+        client_connect_state = ClientConnectState.NO_CONNECTION;
         notifyAll();
     }
 
     private synchronized void markNew() {
-        new_data = true;
+        has_new_data = true;
         notifyAll();
     }
 
     public synchronized boolean hasNew() {
-        return new_data;
+        return has_new_data;
     }
 
     public boolean clientOK() {
-        int state = client_state;
-        return !(state == NO_CONNECTION);
+        return !(client_connect_state == ClientConnectState.NO_CONNECTION);
     }
 
     public synchronized boolean waitForNew() {
-        while (!new_data && clientOK()) {
+        while (!has_new_data && clientOK()) {
             try {
                 wait();
             } catch (InterruptedException e) {}
         }
 
-        return new_data;
+        return has_new_data;
     }
 
     public synchronized boolean waitForNew(long timeout_ms) {
         long start_time = System.currentTimeMillis();
 
-        while (!new_data && clientOK() &&
+        while (!has_new_data && clientOK() &&
                start_time+timeout_ms < System.currentTimeMillis()) {
             try {
                 wait();
             } catch (InterruptedException e) {}
         }
 
-        return new_data;
+        return has_new_data;
     }
 
-    public synchronized String getText() {
-        new_data = false;
+    public synchronized EPLTextState getServerState() {
+        has_new_data = false;
 
-        return server_text;
+        // grab a coherent copy of the state
+        return new EPLTextState(server_state);
     }
 
-    private void setClientVars(JSONObject json) throws JSONException, EPLTalkerException {
-        if (client_state != SENT_CLIENT_READY) {
-            throw new EPLTalkerException("setClientVars in unexpected state "+client_state);
+    private synchronized void setClientVars(JSONObject json) throws JSONException, EPLTalkerException {
+        if (client_connect_state != ClientConnectState.SENT_CLIENT_READY) {
+            throw new EPLTalkerException("setClientVars in unexpected state "+client_connect_state);
         }
 
-        client_state = GOT_VARS;
+        client_connect_state = ClientConnectState.GOT_VARS;
         client_vars = json.getJSONObject("data");
 
-        JSONObject collab_client_vars = client_vars.getJSONObject("collab_client_vars");
-
-        JSONObject initial_attributed_text = collab_client_vars.getJSONObject("initialAttributedText");
-
-        server_text = initial_attributed_text.getString("text");
+        server_state = new EPLTextState(client_vars);
 
         markNew();
     }
 
     // most of the action is in here
     private synchronized void handleCollabRoom(JSONObject json) throws JSONException, EPLTalkerException {
-        if (client_state != GOT_VARS) {
-            throw new EPLTalkerException("handleCollabRoom in unexpected state "+client_state);
+        if (client_connect_state != ClientConnectState.GOT_VARS) {
+            throw new EPLTalkerException("handleCollabRoom in unexpected state "+client_connect_state);
         }
 
         JSONObject data = json.getJSONObject("data");
         String collab_type = data.getString("type");
 
-
         if ("NEW_CHANGES".equals(collab_type)) {
-            EPLChangeset cs;
-            
-            try {
-                cs  = new EPLChangeset(data.getString("changeset"));
-
-                server_text = cs.applyToText(server_text);
-
-            } catch (EPLChangesetException e) {
-                System.out.println(e.toString());
-            }
+            server_state.update(data);
 
             markNew();
         } else if ("USER_NEWINFO".equals(collab_type)) {

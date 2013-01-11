@@ -22,10 +22,17 @@ public class AwtTest extends java.applet.Applet implements Runnable {
     Graphics buffer_graphics;
     Rectangle r = new Rectangle(0,0,0,0);
 
+    enum CodeState {
+        RUNNING,
+        PARSE_ERROR,
+        HALTED
+    }
+    private CodeState code_state;
+
     String pad_name;
-    String fallback_code;
     String code;
     EPLTalker epl;
+    EPLTextState server_state;
 
     public void init() {
         buffer_image = null;
@@ -49,28 +56,9 @@ public class AwtTest extends java.applet.Applet implements Runnable {
             e.printStackTrace();
         }
 
-        fallback_code = ""
-+"import GraphicsWrapper;\n"
-+"import java.awt.Color;\n"
-+"import java.awt.Font;\n"
-+"int frames = 0;\n"
-+"Font counter_font = new Font(\"Monospaced\", Font.PLAIN, 15);\n"
-+"public void render(GraphicsWrapper g) {\n"
-+"float red = (Math.sin(frames/10.)+1)/2;\n"
-+"g.clearRect(0,0,640,480);\n"
-+"g.setColor(Color.BLUE);\n"
-+"g.drawLine(frames++, 40, 100, 200);\n"
-+"g.drawOval(150, 180, 10, 10);\n"
-+"g.drawRect(200, 210, 20, 30);\n"
-+"g.setColor(new Color(red,red,red));\n"
-+"g.fillOval(300, 310, 30, 50);\n"
-+"g.fillRect(400, 350, 60, 50);\n"
-+"g.setColor(Color.BLACK);\n"
-+"g.setFont(counter_font);\n"
-+"g.drawString(String.valueOf(frames), frames, 40);\n"
-+"}\n";
-
-        code = "public void render(GraphicsWrapper) {}";
+        code = null;
+        server_state = null;
+        code_state = CodeState.HALTED;
 
         running = true;
         t = new Thread(this);
@@ -117,70 +105,46 @@ public class AwtTest extends java.applet.Applet implements Runnable {
         GraphicsWrapper gw = new GraphicsWrapper(buffer_graphics);
 
         if (epl.hasNew()) {
-            tryRenderNewCode(epl.getText(), gw);
-        } else if (bsh_renderable != null) {
+            String new_code;
+            server_state = epl.getServerState();
+            new_code = server_state.getText();
+
+            try {
+                bsh.eval(new_code);
+                bsh_renderable = (Renderable) bsh.getInterface(Renderable.class);
+
+                code = new_code;
+                code_state = CodeState.RUNNING;
+            } catch (EvalError e) {
+                System.out.println("eval error "+e.toString()+", not accepting new code:\n" + code);
+
+                code_state = CodeState.PARSE_ERROR;
+
+                // re-eval old code
+                try {
+                    bsh.eval(code);
+                    bsh_renderable = (Renderable) bsh.getInterface(Renderable.class);
+
+                } catch (EvalError e2) {
+                    System.out.println("error " + e2.toString() + " reverting to previously ok code " + code);
+
+                    code_state = CodeState.HALTED;
+                }
+            }
+        }
+        
+        if (code_state != CodeState.HALTED) {
             try {
                 bsh.set("gw", gw);
                 bsh_renderable.render(gw);
             } catch (Exception e) {
+                System.out.println("HALTING");
                 e.printStackTrace();
+
+                code_state = CodeState.HALTED;
             }
-        }
 
-        g.drawImage(buffer_image, 0, 0, this);
-    }
-
-    private void tryEvalNewCode(String newcode) {
-        try {
-            bsh.eval(newcode);
-            bsh_renderable = (Renderable) bsh.getInterface(Renderable.class);
-            code = newcode;
-
-        } catch (EvalError e) {
-            System.out.println("eval-time exception "+e.toString()+", not accepting:\n" + code);
-            e.printStackTrace();
-
-            try {
-                code = fallback_code;
-                bsh.eval(code);
-                bsh_renderable = (Renderable) bsh.getInterface(Renderable.class);
-            } catch (EvalError e2) {
-                System.err.println("unexpected error eval'ing fallback");
-                e2.printStackTrace();
-
-                bsh_renderable = null;
-            }
-        }
-    }
-
-    private void tryRenderNewCode(String newcode, GraphicsWrapper gw) {
-        tryEvalNewCode(newcode);
-
-        try {
-            bsh.set("gw", gw);
-            bsh_renderable.render(gw);
-
-            // rendered ok, save as fallback
-            fallback_code = code;
-        } catch (Exception e) {
-            // any runtime exception prevents us from accepting the new code
-
-            System.out.println("runtime exception "+e.toString()+", not accepting:\n" + code);
-            e.printStackTrace();
-
-            code = fallback_code;
-
-            try {
-                bsh.eval(code);
-                bsh_renderable = (Renderable) bsh.getInterface(Renderable.class);
-                bsh.set("gw", gw);
-                bsh_renderable.render(gw);
-            } catch (EvalError e2) {
-                System.err.println("unexpected error eval'ing fallback");
-                e2.printStackTrace();
-
-                bsh_renderable = null;
-            }
+            g.drawImage(buffer_image, 0, 0, this);
         }
     }
 }
