@@ -9,61 +9,6 @@ public class GraphicsWrapper {
         return g;
     }
 
-    static final String[] methodNames = {
-        "clearRect",    "clipRect",     "copyArea",     "create",
-        "create",       "dispose",      "draw3DRect",   "drawArc",
-        "drawBytes",    "drawChars",
-        "drawImage",    "drawImage",    "drawImage",    "drawImage",
-        "drawImage",    "drawImage",
-        
-        "drawLine",     "drawOval",     "drawPolygon",  "drawPolygon",
-        "drawPolyline", "drawRect",     "drawRoundRect","drawString",
-        "drawString",   "fill3DRect",   "fillArc",      "fillOval",
-        "fillPolygon",  "fillPolygon",  "fillRect",     "fillRoundRect",
-        "finalize",     "getClip",      "getClipBounds","getClipBounds","getColor",
-        "getFont",      "getFontMetrics", "hitClip",    "setClip",
-        "setClip",      "setColor",     "setFont",
-        "setPaintMode", "setXORMode",   "toString",     "translate"};
-
-    static final Class[] args_4int = new Class[]{int.class, int.class, int.class, int.class};
-    static final Class[] args_4intb = new Class[]{int.class, int.class, int.class, int.class, boolean.class};
-    static final Class[] args_6int = new Class[]{int.class, int.class, int.class, int.class, int.class, int.class};
-    static final Class[] args_void = new Class[]{};
-    static final Class[] args_2ian = new Class[]{int[].class, int[].class, int.class};  // 2 integer arrays + number
-
-    static final Class[][] methodArgs = {
-        args_4int, args_4int, args_6int, args_void,
-        args_4int, args_void, args_4intb, args_6int,
-        new Class[]{byte[].class, int.class, int.class, int.class, int.class}, new Class[]{char[].class, int.class, int.class, int.class, int.class},
-        new Class[]{Image.class, int.class, int.class, Color.class, ImageObserver.class},
-            new Class[]{Image.class, int.class, int.class, ImageObserver.class},
-            new Class[]{Image.class, int.class, int.class, int.class, int.class, Color.class, ImageObserver.class},
-            new Class[]{Image.class, int.class, int.class, int.class, int.class, ImageObserver.class},
-        new Class[]{Image.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class, Color.class, ImageObserver.class},
-            new Class[]{Image.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class, int.class, ImageObserver.class},
-        args_4int, args_4int, args_2ian, new Class[]{Polygon.class},
-        args_2ian, args_4int, args_6int, new Class[]{String.class, int.class, int.class},
-        new Class[]{AttributedCharacterIterator.class, int.class, int.class}, args_4intb, args_6int, args_4int,
-        args_2ian, new Class[]{Polygon.class}, args_4int, args_6int,
-        args_void, args_void, args_void, new Class[]{Rectangle.class}, args_void,
-        args_void, args_void, args_4int, args_4int,
-        new Class[]{Shape.class}, new Class[]{Color.class}, new Class[]{Font.class},
-        args_void, new Class[]{Color.class}, args_void, new Class[]{int.class, int.class}
-    };
-
-    static final ExposeMethodSpec exposures[] = ExposeMethodSpec.buildArray(GraphicsWrapper.class, methodNames, methodArgs, methodNames.length);
-
-    public static void exposeTo(bsh.BshClassManager manager) {
-        for (ExposeMethodSpec s: exposures) {
-            try {
-                s.exposeTo(manager);
-            } catch (NoSuchMethodException e) {
-                e.printStackTrace();
-                break;
-            }
-        }
-    }
-
     // standard Graphics constructors
     //public GraphicsWrapper() {
     //}

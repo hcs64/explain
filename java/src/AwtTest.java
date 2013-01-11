@@ -32,8 +32,6 @@ public class AwtTest extends java.applet.Applet implements Runnable {
 
         bsh = new Interpreter();
 
-        GraphicsWrapper.exposeTo(bsh.getClassManager());
-
         pad_name = getParameter("pad_name");
         if (pad_name == null) {
             pad_name = "testpad";
