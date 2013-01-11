@@ -39,6 +39,12 @@ public class AwtTest extends java.applet.Applet implements Runnable {
 
         bsh = new Interpreter();
 
+        try {
+            bsh_renderable = (Renderable) bsh.getInterface(Renderable.class);
+        } catch (EvalError e) {
+            e.printStackTrace();
+        }
+
         pad_name = getParameter("pad_name");
         if (pad_name == null) {
             pad_name = "testpad";
@@ -56,7 +62,7 @@ public class AwtTest extends java.applet.Applet implements Runnable {
             e.printStackTrace();
         }
 
-        code = null;
+        code = "";
         server_state = null;
         code_state = CodeState.HALTED;
 
@@ -102,7 +108,7 @@ public class AwtTest extends java.applet.Applet implements Runnable {
             r = getBounds();
         }
 
-        GraphicsWrapper gw = new GraphicsWrapper(buffer_graphics);
+        GraphicsWrapper gw = new GraphicsWrapper(buffer_graphics, r.width, r.height);
 
         if (epl.hasNew()) {
             String new_code;
@@ -111,20 +117,17 @@ public class AwtTest extends java.applet.Applet implements Runnable {
 
             try {
                 bsh.eval(new_code);
-                bsh_renderable = (Renderable) bsh.getInterface(Renderable.class);
 
                 code = new_code;
                 code_state = CodeState.RUNNING;
             } catch (EvalError e) {
-                System.out.println("eval error "+e.toString()+", not accepting new code:\n" + code);
+                System.out.println("eval error "+e.toString()+", not accepting new code:\n" + new_code);
 
                 code_state = CodeState.PARSE_ERROR;
 
                 // re-eval old code
                 try {
                     bsh.eval(code);
-                    bsh_renderable = (Renderable) bsh.getInterface(Renderable.class);
-
                 } catch (EvalError e2) {
                     System.out.println("error " + e2.toString() + " reverting to previously ok code " + code);
 
@@ -138,7 +141,7 @@ public class AwtTest extends java.applet.Applet implements Runnable {
                 bsh.set("gw", gw);
                 bsh_renderable.render(gw);
             } catch (Exception e) {
-                System.out.println("HALTING");
+                System.out.println("Runtime error, HALTING");
                 e.printStackTrace();
 
                 code_state = CodeState.HALTED;

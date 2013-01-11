@@ -4,6 +4,8 @@ import java.text.AttributedCharacterIterator;
 
 public class GraphicsWrapper {
     private Graphics g;
+    public final int width;
+    public final int height;
 
     public Graphics unwrap() {
         return g;
@@ -13,7 +15,9 @@ public class GraphicsWrapper {
     //public GraphicsWrapper() {
     //}
 
-    public GraphicsWrapper(Graphics g) {
+    public GraphicsWrapper(Graphics g, int width, int height) {
+        this.width = width;
+        this.height = height;
         this.g = g;
     }
 
@@ -32,11 +36,11 @@ public class GraphicsWrapper {
     }
 
     public GraphicsWrapper create() {
-        return new GraphicsWrapper(g.create());
+        return new GraphicsWrapper(g.create(), width, height);
     }
 
     public GraphicsWrapper create(int x, int y, int width, int height) {
-        return new GraphicsWrapper(g.create(x, y, width, height));
+        return new GraphicsWrapper(g.create(x, y, width, height), width, height);
     }
 
     public void dispose() {

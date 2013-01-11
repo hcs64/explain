@@ -22,6 +22,7 @@
         <javac
             srcdir="${src.dir}"
             destdir="${classes.dir}"
+            debug="true"
             classpathref="classpath"
             includeAntRuntime="false"
         />
