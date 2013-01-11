@@ -20,7 +20,7 @@ public class GraphicsWrapper {
         "drawPolyline", "drawRect",     "drawRoundRect","drawString",
         "drawString",   "fill3DRect",   "fillArc",      "fillOval",
         "fillPolygon",  "fillPolygon",  "fillRect",     "fillRoundRect",
-        "finalize",     "getClip",      "getClipBounds","getColor",
+        "finalize",     "getClip",      "getClipBounds","getClipBounds","getColor",
         "getFont",      "getFontMetrics", "hitClip",    "setClip",
         "setClip",      "setColor",     "setFont",
         "setPaintMode", "setXORMode",   "toString",     "translate"};
@@ -45,7 +45,7 @@ public class GraphicsWrapper {
         args_2ian, args_4int, args_6int, new Class[]{String.class, int.class, int.class},
         new Class[]{AttributedCharacterIterator.class, int.class, int.class}, args_4intb, args_6int, args_4int,
         args_2ian, new Class[]{Polygon.class}, args_4int, args_6int,
-        args_void, args_void, args_void, args_void,
+        args_void, args_void, args_void, new Class[]{Rectangle.class}, args_void,
         args_void, args_void, args_4int, args_4int,
         new Class[]{Shape.class}, new Class[]{Color.class}, new Class[]{Font.class},
         args_void, new Class[]{Color.class}, args_void, new Class[]{int.class, int.class}
@@ -212,6 +212,10 @@ public class GraphicsWrapper {
 
     public Rectangle getClipBounds() {
         return g.getClipBounds();
+    }
+
+    public Rectangle getClipBounds(Rectangle r) {
+        return g.getClipBounds(r);
     }
 
     public Color getColor() {
