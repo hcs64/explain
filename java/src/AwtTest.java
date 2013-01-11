@@ -113,7 +113,7 @@ public class AwtTest extends java.applet.Applet implements Runnable {
 
         if (epl.hasNew()) {
             tryRenderNewCode(epl.getText(), gw);
-        } else {
+        } else if (bsh_renderable != null) {
             try {
                 bsh.set("gw", gw);
                 bsh_renderable.render(gw);
@@ -142,6 +142,8 @@ public class AwtTest extends java.applet.Applet implements Runnable {
             } catch (EvalError e2) {
                 System.err.println("unexpected error eval'ing fallback");
                 e2.printStackTrace();
+
+                bsh_renderable = null;
             }
         }
     }
@@ -170,6 +172,8 @@ public class AwtTest extends java.applet.Applet implements Runnable {
             } catch (EvalError e2) {
                 System.err.println("unexpected error eval'ing fallback");
                 e2.printStackTrace();
+
+                bsh_renderable = null;
             }
         }
     }
