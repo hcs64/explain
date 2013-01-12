@@ -36,6 +36,7 @@ public class EPLTalker {
     private String client_id;
     private String pad_id;
 
+
     private SocketIO socket = null;
 
     public EPLTalker(URL url, String client_id, String token, String pad_id) {
@@ -252,6 +253,25 @@ public class EPLTalker {
         // grab a coherent copy of the state
         return new EPLTextState(server_state);
     }
+
+    /*
+    public synchronized void changeTextTo(String new_text) {
+        new_text
+
+        HashMap client_edit_req = new HashMap<String, Object>() {{
+            put("component", "pad");
+            put("type", "COLLABROOM");
+        }};
+
+        put("data", new HashMap<String, Object>() {{
+            put("type", "USER_CHANGES");
+            put("baseRev", baseRev);
+            put("changeset", cs);
+        }});
+
+        send(null, new JSONObject(client_edit_req));
+    }
+    */
 
     private synchronized void setClientVars(JSONObject json) throws JSONException, EPLTalkerException {
         if (client_connect_state != ClientConnectState.SENT_CLIENT_READY) {
