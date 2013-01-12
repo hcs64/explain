@@ -27,6 +27,7 @@ public class EPLTalker {
 
     private boolean has_new_data;
     private EPLTextState server_state;
+    private String pending_changes;
 
     private volatile JSONObject client_vars = null; // state from the server
 
@@ -35,7 +36,6 @@ public class EPLTalker {
     private String token;
     private String client_id;
     private String pad_id;
-
 
     private SocketIO socket = null;
 
@@ -54,6 +54,7 @@ public class EPLTalker {
         has_new_data = false;
 
         server_state = null;
+        pending_changes = null;
     }
 
     // adapted from Etherpad Lite's JS
@@ -254,24 +255,37 @@ public class EPLTalker {
         return new EPLTextState(server_state);
     }
 
-    /*
-    public synchronized void changeTextTo(String new_text) {
-        new_text
+    public synchronized void commitChangeToServer(String replacement, int pos, int chars_to_replace, int old_len) throws EPLTalkerException {
+        if (pending_changes == null) {
+            pending_changes = EPLChangeset.makeSimpleEdit(replacement, pos, chars_to_replace, old_len);
+        } else {
+            try {
+                pending_changes = EPLChangeset.composeSimpleEdit(pending_changes, replacement, pos, chars_to_replace, old_len);
+            } catch (EPLChangesetException e) {
+                throw new EPLTalkerException(e.toString());
+            }
+        }
 
         HashMap client_edit_req = new HashMap<String, Object>() {{
             put("component", "pad");
             put("type", "COLLABROOM");
         }};
 
-        put("data", new HashMap<String, Object>() {{
+        HashMap data = new HashMap<String, Object>() {{
             put("type", "USER_CHANGES");
-            put("baseRev", baseRev);
-            put("changeset", cs);
+            put("baseRev", server_state.getRev());
+            put("changeset", pending_changes);
+        }};
+
+        data.put("apool", new HashMap<String, Object>() {{
+            put("numToAttrib", new Object[] {});
+            put("nextNum",0);
         }});
 
-        send(null, new JSONObject(client_edit_req));
+        client_edit_req.put("data", data);
+
+        socket.send(null, new JSONObject(client_edit_req));
     }
-    */
 
     private synchronized void setClientVars(JSONObject json) throws JSONException, EPLTalkerException {
         if (client_connect_state != ClientConnectState.SENT_CLIENT_READY) {
@@ -299,6 +313,11 @@ public class EPLTalker {
             server_state.update(data);
 
             markNew();
+        } else if ("ACCEPT_COMMIT".equals(collab_type)) {
+            server_state.acceptCommit(data, pending_changes);
+
+            pending_changes = null;
+
         } else if ("USER_NEWINFO".equals(collab_type)) {
             // ignore this for now
 

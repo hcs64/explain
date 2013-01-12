@@ -120,7 +120,6 @@ public class AwtTest extends java.applet.Applet implements Runnable {
             String new_code;
             server_state = epl.getServerState();
             new_code = server_state.getText();
-
             try {
                 bsh.eval(new_code);
 
@@ -132,6 +131,14 @@ public class AwtTest extends java.applet.Applet implements Runnable {
                 err_str = e.toString();
                 err_line = -1;
                 code_state = CodeState.PARSE_ERROR;
+
+                try {
+                    String newstr = "// " + err_str;
+                    epl.commitChangeToServer(newstr, 0, 0, new_code.length());
+                    new_code = newstr + new_code;
+                } catch (EPLTalkerException e2) {
+                    e2.printStackTrace();
+                }
 
                 // re-eval old code
                 try {
