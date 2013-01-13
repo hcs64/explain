@@ -56,7 +56,7 @@ public class EPLTextState {
     }
 
     // update from data JSONObject with ACCEPT_COMMIT type
-    public void acceptCommit(JSONObject data, String pending_changes) throws JSONException, EPLTalkerException {
+    public void acceptCommit(JSONObject data, EPLChangeset confirmed_changes) throws JSONException, EPLTalkerException {
         String type = data.getString("type");
         if (!type.equals("ACCEPT_COMMIT")) {
             throw new EPLTalkerException("passed wrong type '"+type+"'");
@@ -66,9 +66,7 @@ public class EPLTextState {
         long new_rev;
 
         try {
-            EPLChangeset cs = new EPLChangeset(pending_changes);
-
-            new_text = cs.applyToText(text);
+            new_text = confirmed_changes.applyToText(text);
             new_rev = data.getLong("newRev");
 
             update(new_text, new_rev);

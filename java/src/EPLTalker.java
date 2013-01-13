@@ -27,7 +27,8 @@ public class EPLTalker {
 
     private boolean has_new_data;
     private EPLTextState server_state;
-    private String pending_changes;
+    private EPLChangeset sent_changes;
+    private EPLChangeset pending_changes;
 
     private volatile JSONObject client_vars = null; // state from the server
 
@@ -54,6 +55,7 @@ public class EPLTalker {
         has_new_data = false;
 
         server_state = null;
+        sent_changes = null;
         pending_changes = null;
     }
 
@@ -255,36 +257,41 @@ public class EPLTalker {
         return new EPLTextState(server_state);
     }
 
-    public synchronized void commitChangeToServer(String replacement, int pos, int chars_to_replace, int old_len) throws EPLTalkerException {
+    public synchronized void prepareChange(String changeset) throws EPLChangesetException {
+        EPLChangeset cs = new EPLChangeset(changeset);
         if (pending_changes == null) {
-            pending_changes = EPLChangeset.makeSimpleEdit(replacement, pos, chars_to_replace, old_len);
+            pending_changes = cs;
+            //pending_changes = EPLChangeset.compose(EPLChangeset.identity(server_state.text.length()), cs);
         } else {
-            try {
-                pending_changes = EPLChangeset.composeSimpleEdit(pending_changes, replacement, pos, chars_to_replace, old_len);
-            } catch (EPLChangesetException e) {
-                throw new EPLTalkerException(e.toString());
-            }
+            pending_changes = EPLChangeset.compose(pending_changes, cs);
         }
+    }
 
-        HashMap client_edit_req = new HashMap<String, Object>() {{
-            put("component", "pad");
-            put("type", "COLLABROOM");
-        }};
+    public synchronized void commitChanges() {
+        if (pending_changes != null && sent_changes == null) {
+            HashMap client_edit_req = new HashMap<String, Object>() {{
+                put("component", "pad");
+                put("type", "COLLABROOM");
+            }};
 
-        HashMap data = new HashMap<String, Object>() {{
-            put("type", "USER_CHANGES");
-            put("baseRev", server_state.getRev());
-            put("changeset", pending_changes);
-        }};
+            HashMap data = new HashMap<String, Object>() {{
+                put("type", "USER_CHANGES");
+                put("baseRev", server_state.getRev());
+                put("changeset", pending_changes);
+            }};
 
-        data.put("apool", new HashMap<String, Object>() {{
-            put("numToAttrib", new Object[] {});
-            put("nextNum",0);
-        }});
+            data.put("apool", new HashMap<String, Object>() {{
+                    put("numToAttrib", new Object[] {});
+                    put("nextNum",0);
+                    }});
 
-        client_edit_req.put("data", data);
+            client_edit_req.put("data", data);
 
-        socket.send(null, new JSONObject(client_edit_req));
+            socket.send(null, new JSONObject(client_edit_req));
+
+            sent_changes = pending_changes;
+            pending_changes = null;
+        }
     }
 
     private synchronized void setClientVars(JSONObject json) throws JSONException, EPLTalkerException {
@@ -310,13 +317,18 @@ public class EPLTalker {
         String collab_type = data.getString("type");
 
         if ("NEW_CHANGES".equals(collab_type)) {
-            server_state.update(data);
+
+            if (sent_changes != null) {
+                throw new EPLTalkerException("need to implement follows!");
+            } else {
+                server_state.update(data);
+            }
 
             markNew();
         } else if ("ACCEPT_COMMIT".equals(collab_type)) {
-            server_state.acceptCommit(data, pending_changes);
+            server_state.acceptCommit(data, sent_changes);
 
-            pending_changes = null;
+            sent_changes = null;
 
         } else if ("USER_NEWINFO".equals(collab_type)) {
             // ignore this for now

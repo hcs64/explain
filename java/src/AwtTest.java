@@ -133,10 +133,11 @@ public class AwtTest extends java.applet.Applet implements Runnable {
                 code_state = CodeState.PARSE_ERROR;
 
                 try {
-                    String newstr = "// " + err_str;
-                    epl.commitChangeToServer(newstr, 0, 0, new_code.length());
+                    String newstr = "// " + err_str + "\n";
+                    epl.prepareChange(EPLChangeset.simpleEdit(newstr, 0, new_code, 0).toString());
+                    epl.commitChanges();
                     new_code = newstr + new_code;
-                } catch (EPLTalkerException e2) {
+                } catch (EPLChangesetException e2) {
                     e2.printStackTrace();
                 }
 
