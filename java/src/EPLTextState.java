@@ -21,8 +21,10 @@ public class EPLTextState {
     }
 
     public synchronized void update(String new_text, long new_rev) {
-        text = new_text;
-        rev = new_rev;
+        if (new_rev > rev) {
+            text = new_text;
+            rev = new_rev;
+        }
     }
 
     // update from data JSONObject with NEW_CHANGES type
