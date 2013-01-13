@@ -121,7 +121,12 @@ public class EPLChangeset {
         int opsEnd = cs.indexOf("$");
         if (opsEnd < 0) opsEnd = cs.length();
         ops = cs.substring(opsStart, opsEnd);
-        charBank = cs.substring(opsEnd+1);
+
+        if (opsEnd+1 < cs.length()) {
+            charBank = cs.substring(opsEnd+1);
+        } else {
+            charBank = "";
+        }
     }
 
     private void pack() {
@@ -385,7 +390,7 @@ public class EPLChangeset {
                                 opOut = new Operation("", op2.lines, '-', op2.chars);
                             }
                             op1.chars -= op2.chars;
-                            op1.chars -= op2.lines;
+                            op1.lines -= op2.lines;
                             op2.invalidate();
                             if (op1.chars == 0) {
                                 op1.invalidate();
@@ -496,7 +501,7 @@ public class EPLChangeset {
 
         public String peek(int n) throws EPLChangesetException {
             assertRemaining(n);
-            String s = str.substring(curIndex, n);
+            String s = str.substring(curIndex, curIndex+n);
             return s;
         }
 
@@ -527,7 +532,7 @@ public class EPLChangeset {
         private StringBuilder sb;
 
         public OpAssemblerImpl() {
-            clear();
+            sb = new StringBuilder();
         }
 
         public void append(Operation o) {
@@ -635,7 +640,7 @@ public class EPLChangeset {
     // - merges consecutive operations that can be merged
     // - strips final "="
     // - ignores 0-length changes
-    // - reorders consecutive + and - (which margingOpAssembler doesn't do)
+    // - reorders consecutive + and - (which mergingOpAssembler doesn't do)
 
     static class SmartOpAssembler implements OpAssembler {
         MergingOpAssembler minusAssem;

@@ -134,7 +134,9 @@ public class AwtTest extends java.applet.Applet implements Runnable {
 
                 try {
                     String newstr = "// " + err_str + "\n";
-                    epl.prepareChange(EPLChangeset.simpleEdit(newstr, 0, new_code, 0).toString());
+                    epl.prepareChange(EPLChangeset.simpleEdit("//frob"+newstr, 0, new_code, 0).toString());
+                    String blah = "//frob"+newstr+new_code;
+                    epl.prepareChange(EPLChangeset.simpleEdit("", 0, blah, 6).toString());
                     epl.commitChanges();
                     new_code = newstr + new_code;
                 } catch (EPLChangesetException e2) {

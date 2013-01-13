@@ -261,9 +261,12 @@ public class EPLTalker {
         EPLChangeset cs = new EPLChangeset(changeset);
         if (pending_changes == null) {
             pending_changes = cs;
+            //System.out.println("new pending changes '" + changeset + "'");
             //pending_changes = EPLChangeset.compose(EPLChangeset.identity(server_state.text.length()), cs);
         } else {
+            String old_pending_changes = pending_changes.toString();
             pending_changes = EPLChangeset.compose(pending_changes, cs);
+            //System.out.println("'" +old_pending_changes + "' + '" + changeset + "' = '" + pending_changes.toString() + "'");
         }
     }
 
