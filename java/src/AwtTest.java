@@ -118,23 +118,25 @@ public class AwtTest extends java.applet.Applet implements Runnable {
 
         if (epl.hasNew()) {
             String new_code;
-            server_state = epl.getServerState();
-            new_code = server_state.getText();
+            new_code = epl.getClientText();
+
+            try {
+                int fiveidx = new_code.indexOf("555");
+                if (fiveidx != -1) {
+                    epl.makeChange(EPLChangeset.simpleEdit("777", fiveidx, new_code, 3));
+                    new_code = epl.getClientText();
+                    epl.commitChanges();
+                }
+            } catch (EPLChangesetException e2) {
+                e2.printStackTrace();
+            }
+
             try {
                 bsh.eval(new_code);
 
                 code = new_code;
                 code_state = CodeState.RUNNING;
 
-                try {
-                    int fiveidx = code.indexOf("555");
-                    if (fiveidx != -1) {
-                        epl.prepareChange(EPLChangeset.simpleEdit("777", fiveidx, code, 3));
-                        epl.commitChanges();
-                    }
-                } catch (EPLChangesetException e2) {
-                    e2.printStackTrace();
-                }
             } catch (EvalError e) {
                 System.out.println("eval error "+e.toString()+", not accepting new code:\n" + new_code);
 

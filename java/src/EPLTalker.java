@@ -26,6 +26,7 @@ public class EPLTalker {
     private ClientConnectState client_connect_state;
 
     private boolean has_new_data;
+    private String client_text;
     private EPLTextState server_state;
     private EPLChangeset sent_changes;
     private EPLChangeset pending_changes;
@@ -251,19 +252,25 @@ public class EPLTalker {
     }
 
     public synchronized EPLTextState getServerState() {
-        has_new_data = false;
-
         // grab a coherent copy of the state
         return new EPLTextState(server_state);
     }
 
-    public synchronized void prepareChange(EPLChangeset changeset) throws EPLChangesetException {
+    public synchronized String getClientText() {
+        has_new_data = false;
+
+        return client_text;
+    }
+
+    public synchronized void makeChange(EPLChangeset changeset) throws EPLChangesetException {
         if (pending_changes == null) {
             pending_changes = changeset;
             //pending_changes = EPLChangeset.compose(EPLChangeset.identity(server_state.text.length()), cs);
         } else {
             pending_changes = EPLChangeset.compose(pending_changes, changeset);
         }
+
+        client_text = changeset.applyToText(client_text);
     }
 
     public synchronized void commitChanges() {
@@ -302,6 +309,7 @@ public class EPLTalker {
         client_vars = json.getJSONObject("data");
 
         server_state = new EPLTextState(client_vars);
+        client_text = server_state.getText();
 
         markNew();
     }
@@ -317,18 +325,27 @@ public class EPLTalker {
 
         if ("NEW_CHANGES".equals(collab_type)) {
 
-            if (sent_changes != null) {
+            if (pending_changes != null) {
+                throw new EPLTalkerException("need to implement follows!");
+            } else if (sent_changes != null) {
                 throw new EPLTalkerException("need to implement follows!");
             } else {
                 server_state.update(data);
+                client_text = server_state.getText();
             }
 
             markNew();
         } else if ("ACCEPT_COMMIT".equals(collab_type)) {
             server_state.acceptCommit(data, sent_changes);
 
+            if (pending_changes != null) {
+                throw new EPLTalkerException("need to implement follows!");
+            }
+
             sent_changes = null;
 
+            // the acceptance should not introduce any new data to the client
+            //markNew();
         } else if ("USER_NEWINFO".equals(collab_type)) {
             // ignore this for now
 
