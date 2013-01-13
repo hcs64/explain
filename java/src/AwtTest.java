@@ -1,4 +1,5 @@
 import java.awt.*;
+import java.awt.event.*;
 import java.util.HashMap;
 import java.io.IOException;
 import java.net.MalformedURLException;
@@ -8,7 +9,7 @@ import bsh.Interpreter;
 import bsh.EvalError;
 import bsh.BshClassManager;
 
-public class AwtTest extends java.applet.Applet implements Runnable {
+public class AwtTest extends java.applet.Applet implements Runnable, MouseListener {
     volatile boolean running = false;
     boolean animating = false;
 
@@ -86,9 +87,11 @@ public class AwtTest extends java.applet.Applet implements Runnable {
     }
 
     public void start() {
+        addMouseListener(this);
     }
 
     public void stop() {
+        removeMouseListener(this);
     }
 
     public void run() {
@@ -125,7 +128,7 @@ public class AwtTest extends java.applet.Applet implements Runnable {
                 if (fiveidx != -1) {
                     epl.makeChange(EPLChangeset.simpleEdit("777", fiveidx, new_code, 3));
                     new_code = epl.getClientText();
-                    epl.commitChanges();
+                    //epl.commitChanges();
                 }
             } catch (EPLChangesetException e2) {
                 e2.printStackTrace();
@@ -203,5 +206,21 @@ public class AwtTest extends java.applet.Applet implements Runnable {
 
         g.drawImage(buffer_image, 0, 0, this);
 
+    }
+
+    public void mouseClicked(MouseEvent e) {
+        epl.commitChanges();
+    }
+
+    public void mouseEntered(MouseEvent e) {
+    }
+
+    public void mouseExited(MouseEvent e) {
+    }
+
+    public void mousePressed(MouseEvent e) {
+    }
+
+    public void mouseReleased(MouseEvent e) {
     }
 }

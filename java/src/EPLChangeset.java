@@ -57,6 +57,10 @@ public class EPLChangeset {
         return new EPLChangeset(len, len, "", "");
     }
 
+    public boolean isIdentity() {
+        return (ops.length() == 0 && oldLen == newLen);
+    }
+
     static public EPLChangeset simpleEdit(String new_s, int pos, String whole_old_s, int removing) {
 
         SmartOpAssembler assem = new SmartOpAssembler();
@@ -210,7 +214,7 @@ public class EPLChangeset {
         }
 
         boolean isValid() {
-            return (opcode == '+' || opcode == '-' || opcode == '=');
+            return (chars > 0) && (opcode == '+' || opcode == '-' || opcode == '=');
         }
 
         public Operation toImmutable() {
@@ -383,9 +387,6 @@ public class EPLChangeset {
                             op1.chars -= op2.chars;
                             op1.lines -= op2.lines;
                             op2.invalidate();
-                            if (op1.chars == 0) {
-                                op1.invalidate();
-                            }
                         } else { // op2.chars > op1.chars
                             // delete and keep deleting
                             if (op2.opcode == '=') {
@@ -410,9 +411,6 @@ public class EPLChangeset {
                             op1.lines -= op2.lines;
                             op2.invalidate();
 
-                            if (op1.chars == 0) {
-                                op1.invalidate();
-                            }
                         } else { // op2.chars > op1.chars
                             // keep and keep on keeping on
                             //TODO: attrib stuff needed here
@@ -447,6 +445,170 @@ public class EPLChangeset {
         String newOps = z.apply(cs1.ops, 0, cs2.ops, 0);
 
         return new EPLChangeset(len1, len3, newOps, bankAssem.toString());
+    }
+
+    // encapsulated for the sake of being able to pass this into the internal class
+    static class FollowState {
+        public int oldLen;
+        public int oldPos;
+        public int newLen;
+    }
+
+    // compose(cs1, follow(cs1, cs2)) = compose(cs2, follow(cs2, cs1)
+    public static EPLChangeset follow(EPLChangeset cs1, EPLChangeset cs2, final boolean reverseInsertOrder) throws EPLChangesetException { //, pool) {
+        int len1 = cs1.oldLen;
+        int len2 = cs2.oldLen;
+
+        if (len1 != len2) {
+            throw new EPLChangesetException("mismatched follow");
+        }
+
+        final StringIterator chars1 = new StringIterator(cs1.charBank);
+        final StringIterator chars2 = new StringIterator(cs2.charBank);
+        final FollowState fs = new FollowState();
+
+        fs.oldLen = cs1.newLen;
+        fs.oldPos = 0;
+        fs.newLen = 0;
+
+        //hasInsertFirst = attributeTester(['insertorder', 'first'], pool);
+
+        Zipper z = new Zipper(new Zipper.F2() {
+            public Operation func(MutableOperation op1, MutableOperation op2) throws EPLChangesetException {
+                Operation opOut = null;
+
+                if (op1.opcode == '+' || op2.opcode == '+') {
+                    int whichToDo;
+
+                    if (op2.opcode != '+') {
+                        whichToDo = 1;
+                    } else if (op1.opcode != '+') {
+                        whichToDo = 2;
+                    } else {
+                        // both +
+                        char firstChar1 = chars1.peek();
+                        char firstChar2 = chars2.peek();
+                        //var insertFirst1 = hasInsertFirst(op1.attribs);
+                        //var insertFirst2 = hasInsertFirst(op2.attribs);
+                        //if (insertFirst1 && !insertFirst2) {
+                        //  whichToDo = 1;
+                        //} else if (insertFirst2 && !insertFirst1) {
+                        //  whichToDo = 2;
+                        //} else
+                        if (firstChar1 == '\n' && firstChar2 != '\n') {
+                            whichToDo = 2;
+                        } else if (firstChar1 != '\n' && firstChar2 != '\n') {
+                            whichToDo = 1;
+                        }
+                        // break symmetry:
+                        else if (reverseInsertOrder) {
+                            whichToDo = 2;
+                        } else {
+                            whichToDo = 1;
+                        }
+                    }
+
+                    // decide which one to keep for the add
+                    // if it's op1 it works as a keep,
+                    // if it's op2 it works as an add
+                    if (whichToDo == 1) {
+                        chars1.skip(op1.chars);
+                        opOut = new Operation("", op1.lines, '=', op1.chars);
+                        op1.invalidate();
+                    } else {
+                        // whichToDo == 2
+                        chars2.skip(op2.chars);
+                        opOut = op2.toImmutable();
+                        op2.invalidate();
+                    }
+                } else if (op1.opcode == '-') {
+                    if (!op2.isValid()) {
+                        // op1 removed stuff op2 auto-kept,
+                        // won't need any special treatment in the follow
+                        op1.invalidate();
+                    } else {
+                        if (op1.chars <= op2.chars) {
+                            // op1 removed some or all of what op2 was working on
+                            op2.chars -= op1.chars;
+                            op2.lines -= op1.lines;
+                            op1.invalidate();
+                        } else { // op1.chars > op2.chars
+                            // op1 removed all of op2 and then some
+                            op1.chars -= op2.chars;
+                            op1.lines -= op2.lines;
+                            op2.invalidate();
+                        }
+                    }
+                }
+                // at this point op1 can only be a keep
+                else if (op2.opcode == '-') {
+                    if (!op1.isValid()) {
+                        // op2 is just removing from what op1 auto-keeps,
+                        // we copy it but need no other special treatment
+                        opOut = op2.toImmutable();
+                        op2.invalidate();
+                    } else if (op2.chars <= op1.chars) {
+                        // delete part or all of a keep
+                        op1.chars -= op2.chars;
+                        op1.lines -= op2.lines;
+                        opOut = op2.toImmutable();
+
+                        op2.invalidate();
+                    } else {
+                        // delete all of a keep, and keep going
+                        opOut = new Operation("", op1.lines, op2.opcode, op1.chars);
+                        op2.lines -= op1.lines;
+                        op2.chars -= op1.chars;
+                        op1.invalidate();
+                    }
+                }
+                // at this point op1 and op2 can only be keeps
+                else if (!op1.isValid()) {
+                    // auto-keep + keep
+                    opOut = op2.toImmutable();
+                    op2.invalidate();
+                } else if (!op2.isValid()) {
+                    // keep + auto-keep
+                    opOut = op1.toImmutable();
+                    op1.invalidate();
+                } else {
+                    // both explicit keeps
+                    if (op1.chars <= op2.chars) {
+                        opOut = new Operation("", op1.lines, '=', op1.chars);
+                        op2.chars -= op1.chars;
+                        op2.lines -= op1.lines;
+                        op1.invalidate();
+                    } else {
+                        opOut = new Operation("", op2.lines, '=', op2.chars);
+                        op1.chars -= op2.chars;
+                        op1.lines -= op2.lines;
+                        op2.invalidate();
+                    }
+                }
+
+                if (opOut != null) {
+                    switch (opOut.opcode) {
+                    case '=':
+                        fs.oldPos += opOut.chars;
+                        fs.newLen += opOut.chars;
+                        break;
+                    case '-':
+                        fs.oldPos += opOut.chars;
+                        break;
+                    case '+':
+                        fs.newLen += opOut.chars;
+                        break;
+                    }
+                }
+
+                return opOut;
+            }
+        });
+
+        String newOps = z.apply(cs1.ops, 0, cs2.ops, 0);
+        fs.newLen += fs.oldLen - fs.oldPos;
+
+        return new EPLChangeset(fs.oldLen, fs.newLen, newOps, cs2.charBank);
     }
 
     public String toString() {
@@ -494,6 +656,11 @@ public class EPLChangeset {
             assertRemaining(n);
             String s = str.substring(curIndex, curIndex+n);
             return s;
+        }
+
+        public char peek() throws EPLChangesetException {
+            assertRemaining(1);
+            return str.charAt(curIndex);
         }
 
         public String take(int n) throws EPLChangesetException {

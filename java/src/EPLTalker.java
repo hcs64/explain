@@ -27,6 +27,11 @@ public class EPLTalker {
 
     private boolean has_new_data;
     private String client_text;
+
+    // following the documentation (Etherpad and EasySync Technical Manual):
+    // []A: server_state.text
+    //   X: sent_changes
+    //   Y: pending_changes
     private EPLTextState server_state;
     private EPLChangeset sent_changes;
     private EPLChangeset pending_changes;
@@ -263,18 +268,13 @@ public class EPLTalker {
     }
 
     public synchronized void makeChange(EPLChangeset changeset) throws EPLChangesetException {
-        if (pending_changes == null) {
-            pending_changes = changeset;
-            //pending_changes = EPLChangeset.compose(EPLChangeset.identity(server_state.text.length()), cs);
-        } else {
-            pending_changes = EPLChangeset.compose(pending_changes, changeset);
-        }
+        pending_changes = EPLChangeset.compose(pending_changes, changeset);
 
         client_text = changeset.applyToText(client_text);
     }
 
     public synchronized void commitChanges() {
-        if (pending_changes != null && sent_changes == null) {
+        if (sent_changes.isIdentity() && !pending_changes.isIdentity()) {
             HashMap client_edit_req = new HashMap<String, Object>() {{
                 put("component", "pad");
                 put("type", "COLLABROOM");
@@ -296,7 +296,7 @@ public class EPLTalker {
             socket.send(null, new JSONObject(client_edit_req));
 
             sent_changes = pending_changes;
-            pending_changes = null;
+            pending_changes = EPLChangeset.identity(sent_changes.newLen);
         }
     }
 
@@ -311,6 +311,8 @@ public class EPLTalker {
         server_state = new EPLTextState(client_vars);
         client_text = server_state.getText();
 
+        pending_changes = sent_changes = EPLChangeset.identity(server_state.getText().length());
+
         markNew();
     }
 
@@ -324,25 +326,48 @@ public class EPLTalker {
         String collab_type = data.getString("type");
 
         if ("NEW_CHANGES".equals(collab_type)) {
+            try {
+                // This is the heart of the protocol, notation here is from
+                // the technical manual and Etherpad Lite's changesettracker.js
 
-            if (pending_changes != null) {
-                throw new EPLTalkerException("need to implement follows!");
-            } else if (sent_changes != null) {
-                throw new EPLTalkerException("need to implement follows!");
-            } else {
+                // A' = AB
                 server_state.update(data);
-                client_text = server_state.getText();
+                EPLChangeset B = new EPLChangeset(data.getString("changeset"));
+
+                // X' = f(B, X)
+                // var oldSubmittedChangeset = submittedChangeset;
+                // submittedChangeset = Changeset.follow(c, oldSubmittedChangeset, false, apool);
+                EPLChangeset X_prime = EPLChangeset.follow(B, sent_changes, false);
+
+                // c2 = Changeset.follow(oldSubmittedChangeset, c, true, apool);
+                EPLChangeset fXB = EPLChangeset.follow(sent_changes, B, true);
+
+                // Y' = f(f(X, B), Y)
+                // var preferInsertingAfterUserChanges = true;
+                // var oldUserChangeset = userChangeset;
+                // userChangeset = Changeset.follow(c2, oldUserChangeset, preferInsertingAfterUserChanges, apool);
+                EPLChangeset Y_prime = EPLChangeset.follow(fXB, pending_changes, true);
+
+                // D = f(Y, f(X, B))
+                // var postChange = Changeset.follow(oldUserChangeset, c2, !preferInsertingAfterUserChanges, apool);
+                EPLChangeset D = EPLChangeset.follow(pending_changes, fXB, false);
+
+                sent_changes = X_prime;
+                pending_changes = Y_prime;
+
+                if (!D.isIdentity()) {
+                    client_text = D.applyToText(client_text);
+                    markNew();
+                }
+            } catch (EPLChangesetException e) {
+                e.printStackTrace();
+                throw new EPLTalkerException(e.toString());
             }
 
-            markNew();
         } else if ("ACCEPT_COMMIT".equals(collab_type)) {
             server_state.acceptCommit(data, sent_changes);
 
-            if (pending_changes != null) {
-                throw new EPLTalkerException("need to implement follows!");
-            }
-
-            sent_changes = null;
+            sent_changes = EPLChangeset.identity(server_state.getText().length());
 
             // the acceptance should not introduce any new data to the client
             //markNew();
