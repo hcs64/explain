@@ -257,16 +257,12 @@ public class EPLTalker {
         return new EPLTextState(server_state);
     }
 
-    public synchronized void prepareChange(String changeset) throws EPLChangesetException {
-        EPLChangeset cs = new EPLChangeset(changeset);
+    public synchronized void prepareChange(EPLChangeset changeset) throws EPLChangesetException {
         if (pending_changes == null) {
-            pending_changes = cs;
-            //System.out.println("new pending changes '" + changeset + "'");
+            pending_changes = changeset;
             //pending_changes = EPLChangeset.compose(EPLChangeset.identity(server_state.text.length()), cs);
         } else {
-            String old_pending_changes = pending_changes.toString();
-            pending_changes = EPLChangeset.compose(pending_changes, cs);
-            //System.out.println("'" +old_pending_changes + "' + '" + changeset + "' = '" + pending_changes.toString() + "'");
+            pending_changes = EPLChangeset.compose(pending_changes, changeset);
         }
     }
 

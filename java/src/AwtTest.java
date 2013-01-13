@@ -125,23 +125,22 @@ public class AwtTest extends java.applet.Applet implements Runnable {
 
                 code = new_code;
                 code_state = CodeState.RUNNING;
+
+                try {
+                    int fiveidx = code.indexOf("555");
+                    if (fiveidx != -1) {
+                        epl.prepareChange(EPLChangeset.simpleEdit("777", fiveidx, code, 3));
+                        epl.commitChanges();
+                    }
+                } catch (EPLChangesetException e2) {
+                    e2.printStackTrace();
+                }
             } catch (EvalError e) {
                 System.out.println("eval error "+e.toString()+", not accepting new code:\n" + new_code);
 
                 err_str = e.toString();
                 err_line = -1;
                 code_state = CodeState.PARSE_ERROR;
-
-                try {
-                    String newstr = "// " + err_str + "\n";
-                    epl.prepareChange(EPLChangeset.simpleEdit("//frob"+newstr, 0, new_code, 0).toString());
-                    String blah = "//frob"+newstr+new_code;
-                    epl.prepareChange(EPLChangeset.simpleEdit("", 0, blah, 6).toString());
-                    epl.commitChanges();
-                    new_code = newstr + new_code;
-                } catch (EPLChangesetException e2) {
-                    e2.printStackTrace();
-                }
 
                 // re-eval old code
                 try {
@@ -159,6 +158,7 @@ public class AwtTest extends java.applet.Applet implements Runnable {
         if (code_state != CodeState.HALTED) {
             try {
                 bsh.set("gw", gw);
+
                 bsh_renderable.render(gw);
             } catch (UndeclaredThrowableException e) {
                 System.out.println("Runtime error, HALTING");

@@ -58,27 +58,18 @@ public class EPLChangeset {
     }
 
     static public EPLChangeset simpleEdit(String new_s, int pos, String whole_old_s, int removing) {
+
+        SmartOpAssembler assem = new SmartOpAssembler();
         int oldLen = whole_old_s.length();
         int new_s_len = new_s.length();
         int newLen = oldLen - removing + new_s_len;
-        StringBuilder ops = new StringBuilder();
 
-        if (pos > 0) {
-            Operation keep = new Operation("", countNewlines(whole_old_s, 0, pos), '=', pos);
-            ops.append(keep.toString());
-        }
+        assem.appendOpWithText('=', whole_old_s, 0, pos);
+        assem.appendOpWithText('-', whole_old_s, pos, pos + removing);
+        assem.appendOpWithText('+', new_s, 0, new_s_len);
+        assem.endDocument();
 
-        if (removing > 0) {
-            Operation remove = new Operation("", countNewlines(whole_old_s, pos, pos + removing), '-', removing);
-            ops.append(remove.toString());
-        }
-
-        if (new_s_len > 0) {
-            Operation add = new Operation("", countNewlines(new_s, 0, new_s_len), '+', new_s_len);
-            ops.append(add.toString());
-        }
-
-        return new EPLChangeset(oldLen, newLen, ops.toString(), new_s);
+        return new EPLChangeset(oldLen, newLen, assem.toString(), new_s);
     }
 
     // base 36
@@ -700,22 +691,27 @@ public class EPLChangeset {
             lastOpcode = op.opcode;
         }
 
-        public void appendOpWithText(char opcode, String text) {//, String attribs, String pool) {
-            int lastNewlinePos = text.lastIndexOf('\n');
+        // end is noninclusive
+        public void appendOpWithText(char opcode, String text, int start, int end) {//, String attribs, String pool) {
+            int lastNewlinePos = text.lastIndexOf('\n', end-1);
             String attribs = "";
 
+            if (lastNewlinePos < start) {
+                lastNewlinePos = -1;
+            }
+
             if (lastNewlinePos < 0) {
-                int chars = text.length();
+                int chars = end-start;
                 int lines = 0;
                 append(new Operation(attribs, lines, opcode, chars));
             } else {
                 // build a multiline operation
-                int chars = lastNewlinePos + 1;
-                int lines = countNewlines(text, 0, text.length());
+                int chars = lastNewlinePos + 1 - start;
+                int lines = countNewlines(text, start, end);
                 append(new Operation(attribs, lines, opcode, chars));
 
                 // take what's left for a in-line operation
-                chars = text.length() - chars;
+                chars = end - chars;
                 lines = 0;
                 append(new Operation(attribs, lines, opcode, chars));
             }
