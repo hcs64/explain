@@ -213,8 +213,24 @@ public class EPLChangeset {
             opcode = ' ';
         }
 
-        boolean isValid() {
-            return (chars > 0) && (opcode == '+' || opcode == '-' || opcode == '=');
+        public boolean isValid() {
+            return (opcode == '+' || opcode == '-' || opcode == '=');
+        }
+
+        public void decBy(MutableOperation op2) throws EPLChangesetException {
+            if (!op2.isValid()) {
+                throw new EPLChangesetException("trying to dec by an invalidated op");
+            }
+            if (lines < op2.lines || chars < op2.chars) {
+                throw new EPLChangesetException("trying to dec ("+lines+","+chars+") by ("+op2.lines+","+op2.chars+")");
+            }
+
+            lines -= op2.lines;
+            chars -= op2.chars;
+
+            if (chars == 0) {
+                invalidate();
+            }
         }
 
         public Operation toImmutable() {
@@ -348,6 +364,8 @@ public class EPLChangeset {
         int len2 = cs1.newLen;
         int len3 = cs2.newLen;
 
+        //System.out.println("compose ('" + cs1.toString() + "' , '" + cs2.toString() +"')");
+
         if (len2 != cs2.oldLen) {
             throw new EPLChangesetException("mismatched composition");
         }
@@ -384,16 +402,14 @@ public class EPLChangeset {
                             if (op1code == '=') {
                                 opOut = new Operation("", op2.lines, '-', op2.chars);
                             }
-                            op1.chars -= op2.chars;
-                            op1.lines -= op2.lines;
+                            op1.decBy(op2);
                             op2.invalidate();
                         } else { // op2.chars > op1.chars
                             // delete and keep deleting
-                            if (op2.opcode == '=') {
+                            if (op1.opcode == '=') {
                                 opOut = new Operation("", op1.lines, '-', op1.chars);
                             }
-                            op2.chars -= op1.chars;
-                            op2.lines -= op1.lines;
+                            op2.decBy(op1);
                             op1.invalidate();
                         }
                         break;
@@ -407,16 +423,14 @@ public class EPLChangeset {
                             // do the operation from op1 for the chars/lines counted by op2
                             //TODO: attrib stuff needed here
                             opOut = new Operation("", op2.lines, op1.opcode, op2.chars);
-                            op1.chars -= op2.chars;
-                            op1.lines -= op2.lines;
+                            op1.decBy(op2);
                             op2.invalidate();
-
                         } else { // op2.chars > op1.chars
                             // keep and keep on keeping on
                             //TODO: attrib stuff needed here
                             opOut = new Operation("", op1.lines, op1.opcode, op1.chars);
-                            op2.chars -= op1.chars;
-                            op2.lines -= op1.lines;
+                            op2.decBy(op1);
+                            op1.invalidate();
                         }
                         break;
                     default: // op2 is invalid
@@ -454,7 +468,7 @@ public class EPLChangeset {
         public int newLen;
     }
 
-    // compose(cs1, follow(cs1, cs2)) = compose(cs2, follow(cs2, cs1)
+    // compose(cs1, follow(cs1, cs2)) = compose(cs2, follow(cs2, cs1))
     public static EPLChangeset follow(EPLChangeset cs1, EPLChangeset cs2, final boolean reverseInsertOrder) throws EPLChangesetException { //, pool) {
         int len1 = cs1.oldLen;
         int len2 = cs2.oldLen;
@@ -462,6 +476,8 @@ public class EPLChangeset {
         if (len1 != len2) {
             throw new EPLChangesetException("mismatched follow");
         }
+
+        //System.out.println("follow('" + cs1.toString() + "' , '" + cs2.toString() +"')");
 
         final StringIterator chars1 = new StringIterator(cs1.charBank);
         final StringIterator chars2 = new StringIterator(cs2.charBank);
@@ -497,7 +513,7 @@ public class EPLChangeset {
                         //} else
                         if (firstChar1 == '\n' && firstChar2 != '\n') {
                             whichToDo = 2;
-                        } else if (firstChar1 != '\n' && firstChar2 != '\n') {
+                        } else if (firstChar1 != '\n' && firstChar2 == '\n') {
                             whichToDo = 1;
                         }
                         // break symmetry:
@@ -529,13 +545,11 @@ public class EPLChangeset {
                     } else {
                         if (op1.chars <= op2.chars) {
                             // op1 removed some or all of what op2 was working on
-                            op2.chars -= op1.chars;
-                            op2.lines -= op1.lines;
+                            op2.decBy(op1);
                             op1.invalidate();
                         } else { // op1.chars > op2.chars
                             // op1 removed all of op2 and then some
-                            op1.chars -= op2.chars;
-                            op1.lines -= op2.lines;
+                            op1.decBy(op2);
                             op2.invalidate();
                         }
                     }
@@ -549,16 +563,14 @@ public class EPLChangeset {
                         op2.invalidate();
                     } else if (op2.chars <= op1.chars) {
                         // delete part or all of a keep
-                        op1.chars -= op2.chars;
-                        op1.lines -= op2.lines;
+                        op1.decBy(op2);
                         opOut = op2.toImmutable();
 
                         op2.invalidate();
                     } else {
                         // delete all of a keep, and keep going
                         opOut = new Operation("", op1.lines, op2.opcode, op1.chars);
-                        op2.lines -= op1.lines;
-                        op2.chars -= op1.chars;
+                        op2.decBy(op1);
                         op1.invalidate();
                     }
                 }
@@ -575,13 +587,11 @@ public class EPLChangeset {
                     // both explicit keeps
                     if (op1.chars <= op2.chars) {
                         opOut = new Operation("", op1.lines, '=', op1.chars);
-                        op2.chars -= op1.chars;
-                        op2.lines -= op1.lines;
+                        op2.decBy(op1);
                         op1.invalidate();
                     } else {
                         opOut = new Operation("", op2.lines, '=', op2.chars);
-                        op1.chars -= op2.chars;
-                        op1.lines -= op2.lines;
+                        op1.decBy(op2);
                         op2.invalidate();
                     }
                 }
@@ -814,6 +824,9 @@ public class EPLChangeset {
             plusAssem = new MergingOpAssembler();
             keepAssem = new MergingOpAssembler();
             assem = new StringBuilder();
+
+            lastOpcode = ' ';
+            lengthChange = 0;
         }
 
         private void flushKeeps() {

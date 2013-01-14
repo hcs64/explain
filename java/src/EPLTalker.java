@@ -335,12 +335,19 @@ public class EPLTalker {
                 EPLChangeset B = new EPLChangeset(data.getString("changeset"));
 
                 // X' = f(B, X)
-                // var oldSubmittedChangeset = submittedChangeset;
-                // submittedChangeset = Changeset.follow(c, oldSubmittedChangeset, false, apool);
-                EPLChangeset X_prime = EPLChangeset.follow(B, sent_changes, false);
+                // var c2 = c
+                EPLChangeset fXB = B;
+                EPLChangeset X_prime = sent_changes;
+                
+                // if (submittedChangeset) 
+                if (!sent_changes.isIdentity()) {
+                    // var oldSubmittedChangeset = submittedChangeset;
+                    // submittedChangeset = Changeset.follow(c, oldSubmittedChangeset, false, apool);
+                    X_prime = EPLChangeset.follow(B, sent_changes, false);
+                    // c2 = Changeset.follow(oldSubmittedChangeset, c, true, apool);
+                    fXB = EPLChangeset.follow(sent_changes, B, true);
+                }
 
-                // c2 = Changeset.follow(oldSubmittedChangeset, c, true, apool);
-                EPLChangeset fXB = EPLChangeset.follow(sent_changes, B, true);
 
                 // Y' = f(f(X, B), Y)
                 // var preferInsertingAfterUserChanges = true;
@@ -358,6 +365,11 @@ public class EPLTalker {
                 if (!D.isIdentity()) {
                     client_text = D.applyToText(client_text);
                     markNew();
+                }
+
+                String server_would_see = pending_changes.applyToText(server_state.getText());
+                if (!server_would_see.equals(client_text)) {
+                    throw new EPLTalkerException("out of sync, server would see\n'" + server_would_see + "'\nclient sees\n'" + client_text + "'\n");
                 }
             } catch (EPLChangesetException e) {
                 e.printStackTrace();
