@@ -1,23 +1,21 @@
+package graphics;
+
 import java.awt.*;
 import java.awt.image.ImageObserver;
 import java.text.AttributedCharacterIterator;
 
-public class GraphicsWrapper {
-    private Graphics g;
-    public final int width;
-    public final int height;
+public class Graphics {
+    private java.awt.Graphics g;
 
-    public Graphics unwrap() {
+    public java.awt.Graphics unwrap() {
         return g;
     }
 
     // standard Graphics constructors
-    //public GraphicsWrapper() {
+    //public Graphics() {
     //}
 
-    public GraphicsWrapper(Graphics g, int width, int height) {
-        this.width = width;
-        this.height = height;
+    public Graphics(java.awt.Graphics g) {
         this.g = g;
     }
 
@@ -35,12 +33,12 @@ public class GraphicsWrapper {
         g.clipRect(x, y, width, height);
     }
 
-    public GraphicsWrapper create() {
-        return new GraphicsWrapper(g.create(), width, height);
+    public Graphics create() {
+        return new Graphics(g.create());
     }
 
-    public GraphicsWrapper create(int x, int y, int width, int height) {
-        return new GraphicsWrapper(g.create(x, y, width, height), width, height);
+    public Graphics create(int x, int y, int width, int height) {
+        return new Graphics(g.create(x, y, width, height));
     }
 
     public void dispose() {

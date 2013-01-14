@@ -14,7 +14,7 @@ public class AwtTest extends java.applet.Applet implements Runnable, MouseListen
     boolean animating = false;
 
     public interface Renderable {
-        public void render(GraphicsWrapper gw);
+        public void render(graphics.Graphics gw);
     };
 
     Interpreter bsh;
@@ -117,7 +117,7 @@ public class AwtTest extends java.applet.Applet implements Runnable, MouseListen
             r = getBounds();
         }
 
-        GraphicsWrapper gw = new GraphicsWrapper(buffer_graphics, r.width, r.height);
+        graphics.Graphics gw = new graphics.Graphics2D(buffer_graphics);
 
         if (epl.hasNew()) {
             String new_code;
