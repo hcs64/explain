@@ -23,12 +23,14 @@
  * limitations under the License.
  */
 
+package epl;
+
 import java.util.Iterator;
 import java.util.ArrayList;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
-public class EPLChangeset {
+public class Changeset {
     String original_string;
 
     static final Pattern headerRegex = Pattern.compile("Z:([0-9a-z]+)([><])([0-9a-z]+)");
@@ -39,12 +41,12 @@ public class EPLChangeset {
     String ops;
     String charBank;
 
-    public EPLChangeset(String s) throws EPLChangesetException {
+    public Changeset(String s) throws ChangesetException {
         original_string = s;
         unpack();
     }
 
-    public EPLChangeset(int oldLen, int newLen, String newOps, String charBank) {
+    public Changeset(int oldLen, int newLen, String newOps, String charBank) {
         this.oldLen = oldLen;
         this.newLen = newLen;
         this.ops = newOps;
@@ -53,15 +55,15 @@ public class EPLChangeset {
         pack();
     }
 
-    static public EPLChangeset identity(int len) {
-        return new EPLChangeset(len, len, "", "");
+    static public Changeset identity(int len) {
+        return new Changeset(len, len, "", "");
     }
 
     public boolean isIdentity() {
         return (ops.length() == 0 && oldLen == newLen);
     }
 
-    static public EPLChangeset simpleEdit(String new_s, int pos, String whole_old_s, int removing) {
+    static public Changeset simpleEdit(String whole_old_s, int pos, int removing, String new_s) {
 
         SmartOpAssembler assem = new SmartOpAssembler();
         int oldLen = whole_old_s.length();
@@ -73,16 +75,16 @@ public class EPLChangeset {
         assem.appendOpWithText('+', new_s, 0, new_s_len);
         assem.endDocument();
 
-        return new EPLChangeset(oldLen, newLen, assem.toString(), new_s);
+        return new Changeset(oldLen, newLen, assem.toString(), new_s);
     }
 
     // base 36
-    public static int parseNum(String s, int start, int end) throws EPLChangesetException {
+    public static int parseNum(String s, int start, int end) throws ChangesetException {
         String digits = s.substring(start, end);
         try {
             return Integer.parseInt(digits, 36);
         } catch (NumberFormatException e) {
-            throw new EPLChangesetException("couldn't parse base36 number: " + e.toString());
+            throw new ChangesetException("couldn't parse base36 number: " + e.toString());
         }
     }
 
@@ -100,12 +102,12 @@ public class EPLChangeset {
         }
     }
 
-    private void unpack() throws EPLChangesetException {
+    private void unpack() throws ChangesetException {
         final String cs = original_string;
         Matcher m = headerRegex.matcher(cs);
 
         if (!m.find() || m.start(0) == m.end(0)) {
-            throw new EPLChangesetException("header not matched in '"+cs+"'");
+            throw new ChangesetException("header not matched in '"+cs+"'");
         }
 
         oldLen = parseNum(cs, m.start(1), m.end(1));
@@ -217,12 +219,12 @@ public class EPLChangeset {
             return (opcode == '+' || opcode == '-' || opcode == '=');
         }
 
-        public void decBy(MutableOperation op2) throws EPLChangesetException {
+        public void decBy(MutableOperation op2) throws ChangesetException {
             if (!op2.isValid()) {
-                throw new EPLChangesetException("trying to dec by an invalidated op");
+                throw new ChangesetException("trying to dec by an invalidated op");
             }
             if (lines < op2.lines || chars < op2.chars) {
-                throw new EPLChangesetException("trying to dec ("+lines+","+chars+") by ("+op2.lines+","+op2.chars+")");
+                throw new ChangesetException("trying to dec ("+lines+","+chars+") by ("+op2.lines+","+op2.chars+")");
             }
 
             lines -= op2.lines;
@@ -249,7 +251,7 @@ public class EPLChangeset {
 
         Operation regexResult;
 
-        private Operation nextRegexMatch() throws EPLChangesetException {
+        private Operation nextRegexMatch() throws ChangesetException {
             if (m.find(curIndex)) {
                 curIndex = m.end(0);
 
@@ -259,7 +261,7 @@ public class EPLChangeset {
                     if (m.start(2) != m.end(2)) {
                         lines = parseNum(opstring, m.start(2), m.end(2));
                     }
-                } catch (EPLChangesetException e) {}
+                } catch (ChangesetException e) {}
 
                 char opcode = opstring.charAt(m.start(3));
                 int chars = parseNum(opstring, m.start(4), m.end(4));
@@ -279,7 +281,7 @@ public class EPLChangeset {
             regexResult = null;
             try {
                 regexResult = nextRegexMatch();
-            } catch (EPLChangesetException e) {}
+            } catch (ChangesetException e) {}
         }
 
         public OpIterator(String opstring, int offset) {
@@ -292,7 +294,7 @@ public class EPLChangeset {
             regexResult = null;
             try  {
                 regexResult = nextRegexMatch();
-            } catch (EPLChangesetException e) {}
+            } catch (ChangesetException e) {}
         }
 
         public boolean hasNext() {
@@ -305,7 +307,7 @@ public class EPLChangeset {
             regexResult = null;
             try {
                 regexResult = nextRegexMatch();
-            } catch (EPLChangesetException e) { }
+            } catch (ChangesetException e) { }
 
             return o;
         }
@@ -319,9 +321,9 @@ public class EPLChangeset {
     }
 
     // Ignoring all line and attribute info for now.
-    public String applyToText(String s) throws EPLChangesetException {
+    public String applyToText(String s) throws ChangesetException {
         if (s.length() != oldLen) {
-            throw new EPLChangesetException("applying "+original_string+" to length " + s.length() + ", should be " + oldLen);
+            throw new ChangesetException("applying "+original_string+" to length " + s.length() + ", should be " + oldLen);
         }
 
         StringBuilder assem = new StringBuilder(newLen);
@@ -359,7 +361,7 @@ public class EPLChangeset {
      * @param cs2 {Changeset} second Changeset
      * @param pool {AtribsPool} Attribs pool
      */
-    public static EPLChangeset compose(EPLChangeset cs1, EPLChangeset cs2) throws EPLChangesetException { //, pool) {
+    public static Changeset compose(Changeset cs1, Changeset cs2) throws ChangesetException { //, pool) {
         int len1 = cs1.oldLen;
         int len2 = cs1.newLen;
         int len3 = cs2.newLen;
@@ -367,7 +369,7 @@ public class EPLChangeset {
         //System.out.println("compose ('" + cs1.toString() + "' , '" + cs2.toString() +"')");
 
         if (len2 != cs2.oldLen) {
-            throw new EPLChangesetException("mismatched composition");
+            throw new ChangesetException("mismatched composition");
         }
 
         final StringIterator bankIter1 = new StringIterator(cs1.charBank);
@@ -375,7 +377,7 @@ public class EPLChangeset {
         final StringBuilder bankAssem = new StringBuilder();
 
         Zipper z = new Zipper(new Zipper.F2() {
-            public Operation func(MutableOperation op1, MutableOperation op2) throws EPLChangesetException {
+            public Operation func(MutableOperation op1, MutableOperation op2) throws ChangesetException {
                 Operation opOut = null;
                 char op1code = op1.opcode;
                 char op2code = op2.opcode;
@@ -458,7 +460,7 @@ public class EPLChangeset {
 
         String newOps = z.apply(cs1.ops, 0, cs2.ops, 0);
 
-        return new EPLChangeset(len1, len3, newOps, bankAssem.toString());
+        return new Changeset(len1, len3, newOps, bankAssem.toString());
     }
 
     // encapsulated for the sake of being able to pass this into the internal class
@@ -469,12 +471,12 @@ public class EPLChangeset {
     }
 
     // compose(cs1, follow(cs1, cs2)) = compose(cs2, follow(cs2, cs1))
-    public static EPLChangeset follow(EPLChangeset cs1, EPLChangeset cs2, final boolean reverseInsertOrder) throws EPLChangesetException { //, pool) {
+    public static Changeset follow(Changeset cs1, Changeset cs2, final boolean reverseInsertOrder) throws ChangesetException { //, pool) {
         int len1 = cs1.oldLen;
         int len2 = cs2.oldLen;
 
         if (len1 != len2) {
-            throw new EPLChangesetException("mismatched follow");
+            throw new ChangesetException("mismatched follow");
         }
 
         //System.out.println("follow('" + cs1.toString() + "' , '" + cs2.toString() +"')");
@@ -490,7 +492,7 @@ public class EPLChangeset {
         //hasInsertFirst = attributeTester(['insertorder', 'first'], pool);
 
         Zipper z = new Zipper(new Zipper.F2() {
-            public Operation func(MutableOperation op1, MutableOperation op2) throws EPLChangesetException {
+            public Operation func(MutableOperation op1, MutableOperation op2) throws ChangesetException {
                 Operation opOut = null;
 
                 if (op1.opcode == '+' || op2.opcode == '+') {
@@ -618,7 +620,7 @@ public class EPLChangeset {
         String newOps = z.apply(cs1.ops, 0, cs2.ops, 0);
         fs.newLen += fs.oldLen - fs.oldPos;
 
-        return new EPLChangeset(fs.oldLen, fs.newLen, newOps, cs2.charBank);
+        return new Changeset(fs.oldLen, fs.newLen, newOps, cs2.charBank);
     }
 
     public String toString() {
@@ -654,37 +656,37 @@ public class EPLChangeset {
             this.curIndex = 0;
         }
 
-        private void assertRemaining(int n) throws EPLChangesetException {
+        private void assertRemaining(int n) throws ChangesetException {
             if (n <= remaining()) {
                 // we're happy
             } else {
-                throw new EPLChangesetException("!(" + n + " <= " + remaining() + ")");
+                throw new ChangesetException("!(" + n + " <= " + remaining() + ")");
             }
         }
 
-        public String peek(int n) throws EPLChangesetException {
+        public String peek(int n) throws ChangesetException {
             assertRemaining(n);
             String s = str.substring(curIndex, curIndex+n);
             return s;
         }
 
-        public char peek() throws EPLChangesetException {
+        public char peek() throws ChangesetException {
             assertRemaining(1);
             return str.charAt(curIndex);
         }
 
-        public String take(int n) throws EPLChangesetException {
+        public String take(int n) throws ChangesetException {
             String s = peek(n);
             curIndex += n;
             return s;
         }
 
-        public void skip(int n) throws EPLChangesetException {
+        public void skip(int n) throws ChangesetException {
             assertRemaining(n);
             curIndex += n;
         }
 
-        public int remaining() throws EPLChangesetException {
+        public int remaining() throws ChangesetException {
             return str.length() - curIndex;
         }
     }
@@ -925,7 +927,7 @@ public class EPLChangeset {
 
     static class Zipper {
         public interface F2 {
-            Operation func(MutableOperation op1, MutableOperation op2) throws EPLChangesetException;
+            Operation func(MutableOperation op1, MutableOperation op2) throws ChangesetException;
         }
 
         private final F2 func_interface;
@@ -934,7 +936,7 @@ public class EPLChangeset {
             this.func_interface = func_interface;
         }
 
-        public String apply(String in1, int idx1, String in2, int idx2) throws EPLChangesetException {
+        public String apply(String in1, int idx1, String in2, int idx2) throws ChangesetException {
             OpIterator iter1 = new OpIterator(in1, idx1);
             OpIterator iter2 = new OpIterator(in2, idx2);
             SmartOpAssembler assem = new SmartOpAssembler();

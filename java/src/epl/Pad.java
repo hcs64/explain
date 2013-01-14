@@ -1,3 +1,5 @@
+package epl;
+
 import io.socket.*;
 import org.json.*;
 import java.util.HashMap;
@@ -11,9 +13,9 @@ import java.io.InputStreamReader;
 import java.io.BufferedReader;
 import java.io.OutputStream;
 
-// class for talking to an Etherpad Lite server
+// class for talking to an Etherpad Lite server about a particular pad
 
-public class EPLTalker {
+public class Pad {
     // client states
     enum ClientConnectState {
         NO_CONNECTION,
@@ -32,9 +34,9 @@ public class EPLTalker {
     // []A: server_state.text
     //   X: sent_changes
     //   Y: pending_changes
-    private EPLTextState server_state;
-    private EPLChangeset sent_changes;
-    private EPLChangeset pending_changes;
+    private TextState server_state;
+    private Changeset sent_changes;
+    private Changeset pending_changes;
 
     private volatile JSONObject client_vars = null; // state from the server
 
@@ -46,7 +48,7 @@ public class EPLTalker {
 
     private SocketIO socket = null;
 
-    public EPLTalker(URL url, String client_id, String token, String pad_id) {
+    public Pad(URL url, String client_id, String token, String pad_id) {
         this.url = url;
 
         if (token == null) {
@@ -80,7 +82,7 @@ public class EPLTalker {
     }
 
 
-    public static String getSessionToken(URL url) throws IOException, MalformedURLException, EPLTalkerException {
+    public static String getSessionToken(URL url) throws IOException, MalformedURLException, PadException {
         // a really dumb HTTP client so Sun's HttpURLConnection doesn't eat the Set-Cookie
         final String set_cookie = "Set-Cookie: ";
         Socket http_socket = new Socket(url.getHost(), url.getPort());
@@ -107,11 +109,17 @@ public class EPLTalker {
             }
         }
 
-        throw new EPLTalkerException("no express_sid found");
+        throw new PadException("no express_sid found");
     }
 
-    private void handleIncomingMessage(JSONObject json) throws JSONException, EPLTalkerException {
-        String type = json.getString("type");
+    private void handleIncomingMessage(JSONObject json) throws PadException {
+        String type;
+        
+        try {
+            type = json.getString("type");
+        } catch (JSONException e) {
+            throw new PadException("couldn't get type of incoming message", e);
+        }
 
         if ("CLIENT_VARS".equals(type)) {
             setClientVars(json);
@@ -129,9 +137,9 @@ public class EPLTalker {
     }
 
 
-    public synchronized void connect() throws IOException, MalformedURLException, EPLTalkerException {
+    public synchronized void connect() throws IOException, MalformedURLException, PadException {
         if (client_connect_state != ClientConnectState.NO_CONNECTION) {
-            throw new EPLTalkerException("can't connect again");
+            throw new PadException("can't connect again");
         }
 
         socket = new SocketIO(url);
@@ -146,9 +154,7 @@ public class EPLTalker {
             public void onMessage(JSONObject json, IOAcknowledge ack) {
                 try {
                     handleIncomingMessage(json);
-                } catch (JSONException e) {
-                    e.printStackTrace();
-                } catch (EPLTalkerException e) {
+                } catch (PadException e) {
                     e.printStackTrace();
                 }
             }
@@ -176,9 +182,7 @@ public class EPLTalker {
 
                 try {
                     sendClientReady();
-                } catch (JSONException e) {
-                    e.printStackTrace();
-                } catch (EPLTalkerException e) {
+                } catch (PadException e) {
                     e.printStackTrace();
                 }
             }
@@ -193,9 +197,9 @@ public class EPLTalker {
     }
 
 
-    private synchronized void sendClientReady() throws JSONException, EPLTalkerException {
+    private synchronized void sendClientReady() throws PadException {
         if (client_connect_state != ClientConnectState.CONNECTING) {
-            throw new EPLTalkerException("sendClientReady in unexpected state "+client_connect_state);
+            throw new PadException("sendClientReady in unexpected state "+client_connect_state);
         }
 
         HashMap client_ready_req = new HashMap<String, Object>() {{
@@ -256,9 +260,9 @@ public class EPLTalker {
         return has_new_data;
     }
 
-    public synchronized EPLTextState getServerState() {
+    public synchronized TextState getServerState() {
         // grab a coherent copy of the state
-        return new EPLTextState(server_state);
+        return new TextState(server_state);
     }
 
     public synchronized String getClientText() {
@@ -267,85 +271,115 @@ public class EPLTalker {
         return client_text;
     }
 
-    public synchronized void makeChange(EPLChangeset changeset) throws EPLChangesetException {
-        pending_changes = EPLChangeset.compose(pending_changes, changeset);
+    public synchronized void makeChange(Changeset changeset) throws ChangesetException {
+        pending_changes = Changeset.compose(pending_changes, changeset);
 
         client_text = changeset.applyToText(client_text);
     }
 
-    public synchronized void commitChanges() {
-        if (sent_changes.isIdentity() && !pending_changes.isIdentity()) {
-            HashMap client_edit_req = new HashMap<String, Object>() {{
-                put("component", "pad");
-                put("type", "COLLABROOM");
-            }};
-
-            HashMap data = new HashMap<String, Object>() {{
-                put("type", "USER_CHANGES");
-                put("baseRev", server_state.getRev());
-                put("changeset", pending_changes);
-            }};
-
-            data.put("apool", new HashMap<String, Object>() {{
-                    put("numToAttrib", new Object[] {});
-                    put("nextNum",0);
-                    }});
-
-            client_edit_req.put("data", data);
-
-            socket.send(null, new JSONObject(client_edit_req));
-
-            sent_changes = pending_changes;
-            pending_changes = EPLChangeset.identity(sent_changes.newLen);
+    public void makeChange(String whole_old_s, int pos, int removing, String new_s) throws PadException {
+        try {
+            makeChange(Changeset.simpleEdit(whole_old_s, pos, removing, new_s));
+        } catch (ChangesetException e) {
+            throw new PadException("error assembling or applying changeset", e);
         }
     }
 
-    private synchronized void setClientVars(JSONObject json) throws JSONException, EPLTalkerException {
+    public synchronized void commitChanges() throws PadException {
+        if (sent_changes.isIdentity() && !pending_changes.isIdentity()) {
+            JSONObject user_changes;
+
+            try {
+                user_changes = new JSONObject() {{
+                    put("component", "pad");
+                    put("type", "COLLABROOM");
+                    put("data", new JSONObject() {{
+                        put("type", "USER_CHANGES");
+                        put("baseRev", server_state.getRev());
+                        put("changeset", pending_changes);
+
+                        // dummy empty attribute pool
+                        put("apool", new JSONObject() {{
+                            put("numToAttrib", new Object[] {});
+                            put("nextNum",0);
+                        }});
+                    }});
+                }};
+            } catch (JSONException e) {
+                throw new PadException("failed building USER_CHANGES JSON", e);
+            }
+
+            socket.send(null, user_changes);
+
+            sent_changes = pending_changes;
+            pending_changes = Changeset.identity(sent_changes.newLen);
+        }
+    }
+
+    private synchronized void setClientVars(JSONObject json) throws PadException {
         if (client_connect_state != ClientConnectState.SENT_CLIENT_READY) {
-            throw new EPLTalkerException("setClientVars in unexpected state "+client_connect_state);
+            throw new PadException("setClientVars in unexpected state "+client_connect_state);
         }
 
         client_connect_state = ClientConnectState.GOT_VARS;
-        client_vars = json.getJSONObject("data");
+        try {
+            client_vars = json.getJSONObject("data");
+            server_state = new TextState(client_vars);
+        } catch (JSONException e) {
+            throw new PadException("exception getting CLIENT_VARS data");
+        }
 
-        server_state = new EPLTextState(client_vars);
         client_text = server_state.getText();
 
-        pending_changes = sent_changes = EPLChangeset.identity(server_state.getText().length());
+        pending_changes = sent_changes = Changeset.identity(server_state.getText().length());
 
         markNew();
     }
 
     // most of the action is in here
-    private synchronized void handleCollabRoom(JSONObject json) throws JSONException, EPLTalkerException {
+    private synchronized void handleCollabRoom(JSONObject json) throws PadException {
         if (client_connect_state != ClientConnectState.GOT_VARS) {
-            throw new EPLTalkerException("handleCollabRoom in unexpected state "+client_connect_state);
+            throw new PadException("handleCollabRoom in unexpected state "+client_connect_state);
         }
 
-        JSONObject data = json.getJSONObject("data");
-        String collab_type = data.getString("type");
+        JSONObject data;
+        String collab_type;
+
+        try {
+            data = json.getJSONObject("data");
+            collab_type = data.getString("type");
+        } catch (JSONException e) {
+            throw new PadException("error getting COLLABROOM metadata", e);
+        }
 
         if ("NEW_CHANGES".equals(collab_type)) {
+            String changeset_str;
+            try {
+                changeset_str = data.getString("changeset");
+            } catch (JSONException e) {
+                throw new PadException("error getting data from NEW_CHANGES", e);
+            }
+
             try {
                 // This is the heart of the protocol, notation here is from
                 // the technical manual and Etherpad Lite's changesettracker.js
 
                 // A' = AB
                 server_state.update(data);
-                EPLChangeset B = new EPLChangeset(data.getString("changeset"));
+                Changeset B = new Changeset(changeset_str);
 
                 // X' = f(B, X)
                 // var c2 = c
-                EPLChangeset fXB = B;
-                EPLChangeset X_prime = sent_changes;
+                Changeset fXB = B;
+                Changeset X_prime = sent_changes;
                 
                 // if (submittedChangeset) 
                 if (!sent_changes.isIdentity()) {
                     // var oldSubmittedChangeset = submittedChangeset;
                     // submittedChangeset = Changeset.follow(c, oldSubmittedChangeset, false, apool);
-                    X_prime = EPLChangeset.follow(B, sent_changes, false);
+                    X_prime = Changeset.follow(B, sent_changes, false);
                     // c2 = Changeset.follow(oldSubmittedChangeset, c, true, apool);
-                    fXB = EPLChangeset.follow(sent_changes, B, true);
+                    fXB = Changeset.follow(sent_changes, B, true);
                 }
 
 
@@ -353,11 +387,11 @@ public class EPLTalker {
                 // var preferInsertingAfterUserChanges = true;
                 // var oldUserChangeset = userChangeset;
                 // userChangeset = Changeset.follow(c2, oldUserChangeset, preferInsertingAfterUserChanges, apool);
-                EPLChangeset Y_prime = EPLChangeset.follow(fXB, pending_changes, true);
+                Changeset Y_prime = Changeset.follow(fXB, pending_changes, true);
 
                 // D = f(Y, f(X, B))
                 // var postChange = Changeset.follow(oldUserChangeset, c2, !preferInsertingAfterUserChanges, apool);
-                EPLChangeset D = EPLChangeset.follow(pending_changes, fXB, false);
+                Changeset D = Changeset.follow(pending_changes, fXB, false);
 
                 sent_changes = X_prime;
                 pending_changes = Y_prime;
@@ -369,17 +403,16 @@ public class EPLTalker {
 
                 String server_would_see = pending_changes.applyToText(server_state.getText());
                 if (!server_would_see.equals(client_text)) {
-                    throw new EPLTalkerException("out of sync, server would see\n'" + server_would_see + "'\nclient sees\n'" + client_text + "'\n");
+                    throw new PadException("out of sync, server would see\n'" + server_would_see + "'\nclient sees\n'" + client_text + "'\n");
                 }
-            } catch (EPLChangesetException e) {
-                e.printStackTrace();
-                throw new EPLTalkerException(e.toString());
+            } catch (ChangesetException e) {
+                throw new PadException("NEW_CHANGES broke", e);
             }
 
         } else if ("ACCEPT_COMMIT".equals(collab_type)) {
             server_state.acceptCommit(data, sent_changes);
 
-            sent_changes = EPLChangeset.identity(server_state.getText().length());
+            sent_changes = Changeset.identity(server_state.getText().length());
 
             // the acceptance should not introduce any new data to the client
             //markNew();

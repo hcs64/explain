@@ -9,6 +9,9 @@ import bsh.Interpreter;
 import bsh.EvalError;
 import bsh.BshClassManager;
 
+import epl.Pad;
+import epl.PadException;
+
 public class AwtTest extends java.applet.Applet implements Runnable, MouseListener {
     volatile boolean running = false;
     boolean animating = false;
@@ -34,8 +37,7 @@ public class AwtTest extends java.applet.Applet implements Runnable, MouseListen
 
     String pad_name;
     String code;
-    EPLTalker epl;
-    EPLTextState server_state;
+    Pad pad;
 
     int err_line;
     String err_str;
@@ -58,19 +60,18 @@ public class AwtTest extends java.applet.Applet implements Runnable, MouseListen
 
         URL codeBase = getCodeBase();
         try {
-            epl = new EPLTalker(new URL(codeBase.getProtocol(), codeBase.getHost(), codeBase.getPort(), ""), "", null, pad_name);
-            epl.connect();
+            pad = new Pad(new URL(codeBase.getProtocol(), codeBase.getHost(), codeBase.getPort(), ""), "", null, pad_name);
+            pad.connect();
         } catch (MalformedURLException e) {
             e.printStackTrace();
         } catch (IOException e) {
             e.printStackTrace();
-        } catch (EPLTalkerException e) {
+        } catch (PadException e) {
             e.printStackTrace();
         }
 
         err_str = "Waiting for initial text...";
         code = "";
-        server_state = null;
         code_state = CodeState.HALTED;
 
         running = true;
@@ -119,18 +120,18 @@ public class AwtTest extends java.applet.Applet implements Runnable, MouseListen
 
         graphics.Graphics gw = new graphics.Graphics2D(buffer_graphics);
 
-        if (epl.hasNew()) {
+        if (pad.hasNew()) {
             String new_code;
-            new_code = epl.getClientText();
+            new_code = pad.getClientText();
 
             try {
                 int fiveidx = new_code.indexOf("555");
                 if (fiveidx != -1) {
-                    epl.makeChange(EPLChangeset.simpleEdit("777", fiveidx, new_code, 3));
-                    new_code = epl.getClientText();
-                    //epl.commitChanges();
+                    pad.makeChange(new_code, fiveidx, 3, "77");
+                    new_code = pad.getClientText();
+                    //pad.commitChanges();
                 }
-            } catch (EPLChangesetException e2) {
+            } catch (PadException e2) {
                 e2.printStackTrace();
             }
 
@@ -209,7 +210,11 @@ public class AwtTest extends java.applet.Applet implements Runnable, MouseListen
     }
 
     public void mouseClicked(MouseEvent e) {
-        epl.commitChanges();
+        try {
+            pad.commitChanges();
+        } catch (PadException ex) {
+            ex.printStackTrace();
+        }
     }
 
     public void mouseEntered(MouseEvent e) {
