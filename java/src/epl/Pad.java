@@ -305,7 +305,8 @@ public class Pad {
 
     public synchronized TextState getClientState() {
         has_new_data = false;
-        TextState ts = new TextState(client_text, client_rev, server_rev, (ArrayList<Marker>) markers.clone());
+        Marker[] out_markers = new Marker[markers.size()];
+        TextState ts = new TextState(client_text, client_rev, server_rev, markers.toArray(out_markers));
         return ts;
     }
 

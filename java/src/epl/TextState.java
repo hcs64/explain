@@ -1,7 +1,5 @@
 package epl;
 
-import java.util.ArrayList;
-
 // this class represents a coherent snapshot of changing state
 
 public class TextState {
@@ -12,9 +10,9 @@ public class TextState {
     // last known revision from the server
     public final long server_rev;
 
-    public final ArrayList<Marker> markers;
+    public final Marker[] markers;
 
-    public TextState(String text, long rev, long server_rev, ArrayList<Marker> markers) {
+    public TextState(String text, long rev, long server_rev, Marker[] markers) {
         this.text = text;
         this.rev = rev;
         this.server_rev = server_rev;

@@ -9,7 +9,6 @@ import java.net.URL;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
-import java.util.ArrayList;
 
 import epl.Pad;
 import epl.PadException;
@@ -47,7 +46,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
     int start_cursor_idx;
     int end_cursor_idx;
-    ArrayList<Marker> markers;
+    Marker[] markers;
 
     long start_time;
 
@@ -269,8 +268,8 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
                 pad.commitChanges();
             } else {
-                int start_pos = markers.get(start_cursor_idx).pos;
-                int end_pos = markers.get(end_cursor_idx).pos;
+                int start_pos = markers[start_cursor_idx].pos;
+                int end_pos = markers[end_cursor_idx].pos;
                 Pattern p = Pattern.compile("Color\\.([A-Z]+)");
                 Matcher m = p.matcher(code.subSequence(start_pos, end_pos));
 
