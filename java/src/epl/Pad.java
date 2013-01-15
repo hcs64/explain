@@ -286,12 +286,6 @@ public class Pad {
 
     // 
     public synchronized int registerMarker(int pos, boolean before, boolean valid) throws PadException {
-        if (has_new_data) {
-            // I don't know of a good way to work around this short of setting up a whole new
-            // synchronization system
-            //throw new PadException("you have new data, now is not a good time to register");
-        }
-
         markers.add(new Marker(pos, before, valid));
         return markers.size()-1;
     }
@@ -301,6 +295,81 @@ public class Pad {
         for (int i = 0; i < markers.size(); i++) {
             markers.set(i, cs.translateMarker(markers.get(i)));
         }
+    }
+
+    // set "follow" true to have the marker move to the end of the inserted text
+    public synchronized void insertAtMarker(int marker_idx, String new_s, boolean follow) throws PadException {
+        Marker marker = markers.get(marker_idx);
+
+        int marker_old_pos = marker.pos;
+        int marker_offset = 0;
+
+        if (!marker.before) {
+            marker_offset = 1;
+        }
+        
+        try {
+            makeChangeInternal(Changeset.simpleEdit(client_text, marker_old_pos + marker_offset, 0, new_s));
+        } catch (ChangesetException e) {
+            throw new PadException("", e);
+        }
+
+        int marker_new_pos;
+
+        if (follow) {
+            // A[BC => A123[BC
+            // AB]C => AB123[C
+
+            marker_new_pos = marker_old_pos + new_s.length();
+        } else {
+            // A[BC => A[123BC
+            // AB]C => AB]123C
+            marker_new_pos = marker_old_pos;
+        }
+
+        markers.set(marker_idx, new Marker(marker_new_pos, marker.before, true));
+    }
+
+    public synchronized void replaceBetweenMarkers(int start_marker_idx, int end_marker_idx, String new_s) throws PadException {
+        Marker start_marker = markers.get(start_marker_idx);
+        Marker end_marker = markers.get(end_marker_idx);
+
+        int start_pos = start_marker.pos;
+        int start_pos_offset = 0;
+        int end_pos = end_marker.pos;
+        int end_pos_offset = 0;
+
+        if (start_marker.before) {
+            // A[BC...
+            // replace includes this character, no change
+        } else {
+            // AB]C...
+            // replace excludes this character, inc
+            start_pos_offset = 1;
+        }
+
+        if (end_marker.before) {
+            // ...A[BC
+            // replace excludes this character, no change (end is noninclusive)
+        } else {
+            // ...AB]C
+            // replace includes this character, inc
+            end_pos_offset = 1;
+        }
+
+        if (end_pos + end_pos_offset < start_pos + start_pos_offset) {
+            throw new PadException("marked range ends before it begins");
+        }
+
+        try {
+            makeChangeInternal(Changeset.simpleEdit(client_text, start_pos + start_pos_offset, end_pos + end_pos_offset - (start_pos + start_pos_offset), new_s));
+        } catch (ChangesetException e) {
+            throw new PadException("", e);
+        }
+
+        // update markers (removing text generally invalidates markers)
+        markers.set(start_marker_idx, new Marker(start_pos - start_pos_offset, start_marker.before, true));
+        markers.set(end_marker_idx, new Marker(start_pos + new_s.length() - end_pos_offset, end_marker.before, true));
     }
 
     public synchronized TextState getClientState() {
@@ -330,22 +399,30 @@ public class Pad {
         }
     }
 
-    public synchronized void prependText(String new_s) throws PadException {
+    // returns new marker index i, i and i+1 are markers for the appended text (i is a 'before' marker, i+1 is after)
+    public synchronized void prependTextAndMark(String new_s) throws PadException {
         try {
             makeChangeInternal(Changeset.simpleEdit(client_text, 0, 0, new_s));
         } catch (ChangesetException e) {
             throw new PadException("error assembling or applying prepend changeset", e);
         }
+
+        markers.add(new Marker(0, true, true));
+        markers.add(new Marker(new_s.length()-1, false, true));
     }
 
-    public synchronized int appendText(String new_s) throws PadException {
+    // returns new marker index i, i and i+1 are markers for the appended text (i is a 'before' marker, i+1 is after)
+    public synchronized int appendTextAndMark(String new_s) throws PadException {
         int pos = client_text.length()-1;
         try {
             makeChangeInternal(Changeset.simpleEdit(client_text, pos, 0, new_s));
         } catch (ChangesetException e) {
             throw new PadException("error assembling or applying append changeset", e);
         }
-        return pos;
+
+        markers.add(new Marker(pos, true, true));
+        markers.add(new Marker(pos+new_s.length()-1, false, true));
+        return markers.size()-2;
     }
 
     public synchronized void commitChanges() throws PadException {

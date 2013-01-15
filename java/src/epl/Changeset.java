@@ -63,12 +63,16 @@ public class Changeset {
         return (ops.length() == 0 && oldLen == newLen);
     }
 
-    static public Changeset simpleEdit(String whole_old_s, int pos, int removing, String new_s) {
+    static public Changeset simpleEdit(String whole_old_s, int pos, int removing, String new_s) throws ChangesetException {
 
         SmartOpAssembler assem = new SmartOpAssembler();
         int oldLen = whole_old_s.length();
         int new_s_len = new_s.length();
         int newLen = oldLen - removing + new_s_len;
+
+        if (removing >= oldLen) {
+            throw new ChangesetException("removing too much ("+removing+">="+oldLen+")");
+        }
 
         assem.appendOpWithText('=', whole_old_s, 0, pos);
         assem.appendOpWithText('-', whole_old_s, pos, pos + removing);
@@ -417,7 +421,7 @@ public class Changeset {
         int len2 = cs1.newLen;
         int len3 = cs2.newLen;
 
-        System.out.println("compose ('" + cs1.toString() + "' , '" + cs2.toString() +"')");
+        //System.out.println("compose ('" + cs1.toString() + "' , '" + cs2.toString() +"')");
 
         if (len2 != cs2.oldLen) {
             throw new ChangesetException("mismatched composition");
@@ -945,7 +949,7 @@ public class Changeset {
                 append(new Operation(attribs, lines, opcode, chars));
 
                 // take what's left for a in-line operation
-                chars = end - chars;
+                chars = end - (chars + start);
                 lines = 0;
                 append(new Operation(attribs, lines, opcode, chars));
             }

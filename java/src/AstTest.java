@@ -9,6 +9,8 @@ import java.net.URL;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
+import java.util.LinkedList;
+import java.util.ListIterator;
 
 import epl.Pad;
 import epl.PadException;
@@ -18,11 +20,65 @@ import epl.Marker;
 public class AstTest extends java.applet.Applet implements Runnable, MouseListener, MouseMotionListener {
     volatile boolean running = false;
     boolean animating = false;
-    boolean newflag = false;
 
     public interface Renderable {
         public void render(graphics.Graphics g, long t);
-    };
+    }
+
+    class Circle {
+        private int x;
+        private int y;
+        private int start_cursor_idx;
+        private int end_cursor_idx;
+
+        public final Pattern p = Pattern.compile("g.setColor\\(Color\\.[A-Z]+\\);");
+
+        public Circle(int x, int y) throws PadException {
+            this.x = x;
+            this.y = y;
+
+            String new_circ = "g.setColor(Color.RED);\ng.drawArc(" + x + "," + y + ",100,100,0,360);\n";
+            start_cursor_idx = pad.appendTextAndMark(new_circ);
+            end_cursor_idx = start_cursor_idx + 1;
+            updatePadState();
+            pad.commitChanges();
+        }
+
+        public Matcher matcher(CharSequence cs) {
+            return p.matcher(cs);
+        }
+
+        public boolean isValid() {
+            if (markers[start_cursor_idx].valid && markers[end_cursor_idx].valid) {
+                return true;
+            }
+
+            return false;
+        }
+
+        public void modify() throws PadException {
+            if (isValid()) {
+                CharSequence cs = code.subSequence(markers[start_cursor_idx].pos, markers[end_cursor_idx].pos+1);
+                Matcher m = matcher(cs);
+                if (m.find()) {
+                    x++; y++;
+                    String new_circ = "g.setColor(Color.RED);\ng.drawArc(" + x + "," + y + ",100,100,0,360);\n";
+                    pad.replaceBetweenMarkers(start_cursor_idx, end_cursor_idx, new_circ);
+                    updatePadState();
+                    pad.commitChanges();
+                } else {
+                    System.out.println("no match");
+                }
+            } else {
+                System.out.println("not valid");
+            }
+        }
+
+        public void render(Graphics g) {
+            g.setColor(Color.BLACK);
+            g.drawRect(x,y,100,100);
+        }
+    }
 
     Interpreter bsh;
     Renderable bsh_renderable;
@@ -42,10 +98,10 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     String pad_name;
     String wrapped_code;
     String code;
+    String new_code;
     Pad pad;
 
-    int start_cursor_idx;
-    int end_cursor_idx;
+    LinkedList<Circle> known_circles;
     Marker[] markers;
 
     long start_time;
@@ -82,13 +138,12 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
         }
 
         err_str = "Waiting for initial text...";
-        code = "";
-        wrapped_code = wrapForRender(code);
+        code = null;
+        wrapped_code = null;
+        new_code = "";
         code_state = CodeState.HALTED;
 
-        start_cursor_idx = -1;
-        end_cursor_idx = -1;
-
+        known_circles = new LinkedList<Circle>();
         running = true;
         t = new Thread(this);
         t.start();
@@ -104,6 +159,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
     public void start() {
         addMouseListener(this);
+        addMouseMotionListener(this);
     }
 
     public void stop() {
@@ -124,14 +180,18 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
         return "import graphics.Graphics2D;\n\npublic void render(graphics.Graphics2D g, long t) {\n" + code + "\n}\n";
     }
 
-    public void update(Graphics g) {
-        if (pad.hasNew() || newflag) {
-            newflag = false;
-            String new_code;
-            TextState new_state = pad.getClientState();
-            new_code = new_state.text;
-            markers = new_state.markers;
+    public void updatePadState() {
+        TextState new_state = pad.getClientState();
+        new_code = new_state.text;
+        markers = new_state.markers;
+    }
 
+    public void update(Graphics g) {
+        if (pad.hasNew()) {
+            updatePadState();
+        }
+
+        if (new_code != null) {
             try {
                 start_time = System.currentTimeMillis();
                 String new_wrapped_code = wrapForRender(new_code);
@@ -258,46 +318,23 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     }
 
     public void mouseClicked(MouseEvent e) {
+        if (known_circles.size() == 0) {
         try {
-            if (start_cursor_idx == -1) {
-                String new_circ = "g.setColor(Color.RED);\ng.drawArc(" + e.getX() + "," + e.getY() + ",100,100,0,360);\n";
-                int circ_pos = pad.appendText(new_circ);
-
-                start_cursor_idx = pad.registerMarker(circ_pos, true, true);
-                end_cursor_idx = pad.registerMarker(circ_pos + new_circ.length(), true, true);
-
-                pad.commitChanges();
-            } else {
-                int start_pos = markers[start_cursor_idx].pos;
-                int end_pos = markers[end_cursor_idx].pos;
-                Pattern p = Pattern.compile("Color\\.([A-Z]+)");
-                Matcher m = p.matcher(code.subSequence(start_pos, end_pos));
-
-                if (m.find()) {
-                    String color = m.group(1);
-                    int color_start = m.start(1) + start_pos;
-                    int color_end = m.end(1) + start_pos;
-
-                    if ("RED".equals(color)) {
-                        color = "BLUE";
-                    } else if ("BLUE".equals(color)) {
-                        color = "GREEN";
-                    } else if ("GREEN".equals(color)) {
-                        color = "RED";
-                    } else {
-                        color = "BLACK/*nope!*/";
-                    }
-
-                    pad.makeChange(color_start, color_end-color_start, color);
-                    pad.commitChanges();
-                }
-            }
-
+            known_circles.add(new Circle(e.getX(), e.getY()));
         } catch (PadException ex) {
             ex.printStackTrace();
         }
+        } else {
 
-        newflag = true;
+        try {
+            for (ListIterator<Circle> i = known_circles.listIterator(); i.hasNext(); ) {
+                Circle c = i.next();
+                c.modify();
+            }
+        } catch (PadException ex) {
+            ex.printStackTrace();
+        }
+        }
     }
 
     public void mouseEntered(MouseEvent e) {
