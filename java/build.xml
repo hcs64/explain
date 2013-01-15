@@ -1,6 +1,6 @@
 <!-- based on the example at http://ant.apache.org/manual/tutorial-HelloWorldWithAnt.html -->
 
-<project name="awttest" default="compile">
+<project name="asttest" default="compile">
 
     <property name="src.dir"        value="src"/>
     <property name="build.dir"      value="build"/>
@@ -43,3 +43,4 @@
     </target>
 
 </project>
+

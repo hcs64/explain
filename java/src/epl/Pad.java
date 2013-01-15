@@ -2,8 +2,9 @@ package epl;
 
 import io.socket.*;
 import org.json.*;
-import java.util.HashMap;
 import java.util.Iterator;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.io.IOException;
 import java.net.URL;
 import java.net.MalformedURLException;
@@ -27,18 +28,27 @@ public class Pad {
     }
     private ClientConnectState client_connect_state;
 
-    private boolean has_new_data;
-    private String client_text;
-
     // following the documentation (Etherpad and EasySync Technical Manual):
-    // []A: server_state.text
+    // []A: server_text
     //   X: sent_changes
     //   Y: pending_changes
-    private TextState server_state;
+    private String server_text;
+    private long server_rev;
+
+    private String client_text;
+    private long client_rev;
+
     private Changeset sent_changes;
     private Changeset pending_changes;
 
-    private volatile JSONObject client_vars = null; // state from the server
+    // new changes the client hasn't picked up yet
+    private boolean has_new_data;
+
+    // we maintain the positions of markers which get jostled around by
+    // remote and local updates
+    ArrayList<Marker> markers;
+
+    private volatile JSONObject client_vars = null; // initial state from the server
 
     private URL url;
     private String session_token;
@@ -62,9 +72,15 @@ public class Pad {
         client_connect_state = ClientConnectState.NO_CONNECTION;
         has_new_data = false;
 
-        server_state = null;
+        server_text = null;
+        server_rev = -1;
+        client_text = null;
+        client_rev = -1;
+
         sent_changes = null;
         pending_changes = null;
+
+        markers = new ArrayList<Marker> ();
     }
 
     // adapted from Etherpad Lite's JS
@@ -260,29 +276,75 @@ public class Pad {
         return has_new_data;
     }
 
+    /*
     public synchronized TextState getServerState() {
         // grab a coherent copy of the state
-        return new TextState(server_state);
+        // "changes" isn't well defined in this case
+        return new TextState(server_text, null, server_rev);
+    }
+    */
+
+    // 
+    public synchronized int registerMarker(int pos, boolean before, boolean valid) throws PadException {
+        if (has_new_data) {
+            // I don't know of a good way to work around this short of setting up a whole new
+            // synchronization system
+            //throw new PadException("you have new data, now is not a good time to register");
+        }
+
+        markers.add(new Marker(pos, before, valid));
+        return markers.size()-1;
     }
 
-    public synchronized String getClientText() {
+    // only call when synchronized!
+    private void translateMarkers(Changeset cs) {
+        for (int i = 0; i < markers.size(); i++) {
+            markers.set(i, cs.translateMarker(markers.get(i)));
+        }
+    }
+
+    public synchronized TextState getClientState() {
         has_new_data = false;
-
-        return client_text;
+        TextState ts = new TextState(client_text, client_rev, server_rev, (ArrayList<Marker>) markers.clone());
+        return ts;
     }
 
-    public synchronized void makeChange(Changeset changeset) throws ChangesetException {
+    // only call when synchronized!
+    private void makeChangeInternal(Changeset changeset) throws ChangesetException {
         pending_changes = Changeset.compose(pending_changes, changeset);
 
         client_text = changeset.applyToText(client_text);
+        translateMarkers(changeset);
     }
 
-    public void makeChange(String whole_old_s, int pos, int removing, String new_s) throws PadException {
+    public synchronized void makeChange(Changeset changeset) throws ChangesetException {
+        makeChangeInternal(changeset);
+    }
+
+    public synchronized void makeChange(int pos, int removing, String new_s) throws PadException {
         try {
-            makeChange(Changeset.simpleEdit(whole_old_s, pos, removing, new_s));
+            makeChangeInternal(Changeset.simpleEdit(client_text, pos, removing, new_s));
         } catch (ChangesetException e) {
             throw new PadException("error assembling or applying changeset", e);
         }
+    }
+
+    public synchronized void prependText(String new_s) throws PadException {
+        try {
+            makeChangeInternal(Changeset.simpleEdit(client_text, 0, 0, new_s));
+        } catch (ChangesetException e) {
+            throw new PadException("error assembling or applying prepend changeset", e);
+        }
+    }
+
+    public synchronized int appendText(String new_s) throws PadException {
+        int pos = client_text.length()-1;
+        try {
+            makeChangeInternal(Changeset.simpleEdit(client_text, pos, 0, new_s));
+        } catch (ChangesetException e) {
+            throw new PadException("error assembling or applying append changeset", e);
+        }
+        return pos;
     }
 
     public synchronized void commitChanges() throws PadException {
@@ -295,7 +357,7 @@ public class Pad {
                     put("type", "COLLABROOM");
                     put("data", new JSONObject() {{
                         put("type", "USER_CHANGES");
-                        put("baseRev", server_state.getRev());
+                        put("baseRev", server_rev);
                         put("changeset", pending_changes);
 
                         // dummy empty attribute pool
@@ -324,14 +386,18 @@ public class Pad {
         client_connect_state = ClientConnectState.GOT_VARS;
         try {
             client_vars = json.getJSONObject("data");
-            server_state = new TextState(client_vars);
+            JSONObject collab_client_vars = client_vars.getJSONObject("collab_client_vars");
+
+            server_text = collab_client_vars.getJSONObject("initialAttributedText").getString("text");
+            server_rev = collab_client_vars.getLong("rev");
         } catch (JSONException e) {
             throw new PadException("exception getting CLIENT_VARS data");
         }
 
-        client_text = server_state.getText();
+        client_text = server_text;
+        client_rev = server_rev;
 
-        pending_changes = sent_changes = Changeset.identity(server_state.getText().length());
+        pending_changes = sent_changes = Changeset.identity(server_text.length());
 
         markNew();
     }
@@ -360,13 +426,31 @@ public class Pad {
                 throw new PadException("error getting data from NEW_CHANGES", e);
             }
 
+            String new_text;
+            long new_time;
+            long new_rev;
+            long time_delta = 0;
+            String cs_str;
+
             try {
                 // This is the heart of the protocol, notation here is from
                 // the technical manual and Etherpad Lite's changesettracker.js
 
+                try {
+                    cs_str = data.getString("changeset");
+
+                    new_rev = data.getLong("newRev");
+                    new_time = data.getLong("currentTime");
+                    if (!data.isNull("timeDelta")) {
+                        time_delta = data.getLong("timeDelta");
+                    }
+                } catch (JSONException e) {
+                    throw new PadException("error updating from NEW_CHANGES", e);
+                }
+
                 // A' = AB
-                server_state.update(data);
-                Changeset B = new Changeset(changeset_str);
+                Changeset B = new Changeset(cs_str);
+                new_text = B.applyToText(server_text);
 
                 // X' = f(B, X)
                 // var c2 = c
@@ -396,12 +480,23 @@ public class Pad {
                 sent_changes = X_prime;
                 pending_changes = Y_prime;
 
+                server_text = new_text;
+                server_rev = new_rev;
+
+                if (sent_changes.isIdentity() && pending_changes.isIdentity()) {
+                    client_rev = new_rev;
+                } else {
+                    client_rev = -1;
+                }
+
                 if (!D.isIdentity()) {
                     client_text = D.applyToText(client_text);
+                    translateMarkers(D);
                     markNew();
                 }
 
-                String server_would_see = pending_changes.applyToText(server_state.getText());
+                // check out that all these follows seem to work as intended
+                String server_would_see = pending_changes.applyToText(server_text);
                 if (!server_would_see.equals(client_text)) {
                     throw new PadException("out of sync, server would see\n'" + server_would_see + "'\nclient sees\n'" + client_text + "'\n");
                 }
@@ -410,12 +505,38 @@ public class Pad {
             }
 
         } else if ("ACCEPT_COMMIT".equals(collab_type)) {
-            server_state.acceptCommit(data, sent_changes);
 
-            sent_changes = Changeset.identity(server_state.getText().length());
+            String new_text;
+            long new_rev;
+
+            try {
+                new_rev = data.getLong("newRev");
+            } catch (JSONException e) {
+                throw new PadException("failed getting ACCEPT_COMMIT's newRev", e);
+            }
+
+            try {
+                new_text = sent_changes.applyToText(server_text);
+
+            } catch (ChangesetException e) {
+                throw new PadException("failed applying confirmed changes on ACCEPT_COMMIT", e);
+            }
+
+            server_text = new_text;
+            server_rev = new_rev;
+
+            if (pending_changes.isIdentity()) {
+                client_rev = new_rev;
+                // assert client_text == server_text?
+            } else {
+                client_rev = -1;
+            }
+
+            sent_changes = Changeset.identity(server_text.length());
 
             // the acceptance should not introduce any new data to the client
             //markNew();
+
         } else if ("USER_NEWINFO".equals(collab_type)) {
             // ignore this for now
 

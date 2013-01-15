@@ -354,6 +354,57 @@ public class Changeset {
         return assem.toString();
     }
 
+    // Determine where a marker ends up after this changeset.
+    public Marker translateMarker(Marker marker) {
+        int old_pos = 0;
+        int new_pos = 0;
+
+        for (OpIterator i = opIterator(); i.hasNext(); ) {
+            Operation o = (Operation) i.next();
+            int old_next_pos;
+            int new_next_pos;
+
+            if (o.opcode == '-' || o.opcode == '=') {
+                old_next_pos = old_pos + o.chars;
+            } else {
+                old_next_pos = old_pos;
+            }
+
+            if (o.opcode == '+' || o.opcode == '=') {
+                new_next_pos = new_pos + o.chars;
+            } else {
+                new_next_pos = new_pos;
+            }
+
+            if (marker.pos >= old_pos && marker.pos < old_next_pos) {
+                // old marker was in this range
+                if (o.opcode == '=') {
+                    // preserved
+                    break;
+                } else { //o.opcode == '-'
+                    // old marker's char was removed
+
+                    // ABC => AC
+                    if (marker.before) {
+                        // A[BC => A[C
+                        return new Marker(new_pos, marker.before, false);
+                    } else {
+                        // after
+                        // AB]C => A]C
+                        return new Marker(Math.max(0, marker.pos-1), marker.before, false);
+                    }
+
+                }
+            }
+
+            old_pos = old_next_pos;
+            new_pos = new_next_pos;
+        }
+
+        // if we got here we're retained
+        if (new_pos == old_pos) return marker;
+        return new Marker(marker.pos + new_pos - old_pos, marker.before, true);
+    }
 
     /**
      * compose two Changesets
@@ -366,7 +417,7 @@ public class Changeset {
         int len2 = cs1.newLen;
         int len3 = cs2.newLen;
 
-        //System.out.println("compose ('" + cs1.toString() + "' , '" + cs2.toString() +"')");
+        System.out.println("compose ('" + cs1.toString() + "' , '" + cs2.toString() +"')");
 
         if (len2 != cs2.oldLen) {
             throw new ChangesetException("mismatched composition");
@@ -418,6 +469,7 @@ public class Changeset {
                     case '+':
                         // op2 is insertion, preserve
                         opOut = op2.toImmutable();
+                        op2.invalidate();
                         break;
                     case '=':
                         if (op2.chars <= op1.chars) {
