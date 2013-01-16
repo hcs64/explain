@@ -4,7 +4,9 @@ import io.socket.*;
 import org.json.*;
 import java.util.Iterator;
 import java.util.ArrayList;
+import java.util.Queue;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.io.IOException;
 import java.net.URL;
 import java.net.MalformedURLException;
@@ -24,14 +26,16 @@ public class Pad {
         GOT_SESSION_TOKEN,
         CONNECTING,
         SENT_CLIENT_READY,
-        GOT_VARS            // a normal connected state
+        GOT_VARS,
+        NORMAL, // fully connected, our client has the initial text
     }
-    private ClientConnectState client_connect_state;
+    private volatile ClientConnectState client_connect_state;
 
     // following the documentation (Etherpad and EasySync Technical Manual):
-    // []A: server_text
-    //   X: sent_changes
-    //   Y: pending_changes
+    // []A: server_text (the last known shared revision)
+    //   X: sent_changes (changes we have make locally and transmitted that have not been ack'd)
+    //   Y: pending_changes (changes we have made locally and not transmitted yet)
+    //   V: client_text (our local version)
     private String server_text;
     private long server_rev;
 
@@ -41,8 +45,8 @@ public class Pad {
     private Changeset sent_changes;
     private Changeset pending_changes;
 
-    // new changes the client hasn't picked up yet
-    private boolean has_new_data;
+    // queue of unprocessed messages
+    private Queue<JSONObject> collabroom_messages;
 
     // we maintain the positions of markers which get jostled around by
     // remote and local updates
@@ -58,7 +62,13 @@ public class Pad {
 
     private SocketIO socket = null;
 
-    public Pad(URL url, String client_id, String token, String pad_id) {
+    public Pad(
+        URL url,
+        String client_id,   // can be ""
+        String token,       // can be null
+        String pad_id,      // must be set
+        String session_token // can be null
+        ) {
         this.url = url;
 
         if (token == null) {
@@ -68,9 +78,9 @@ public class Pad {
         this.token = token;
         this.client_id = client_id;
         this.pad_id = pad_id;
+        this.session_token = session_token;
 
         client_connect_state = ClientConnectState.NO_CONNECTION;
-        has_new_data = false;
 
         server_text = null;
         server_rev = -1;
@@ -79,6 +89,8 @@ public class Pad {
 
         sent_changes = null;
         pending_changes = null;
+
+        collabroom_messages = new LinkedList<JSONObject> ();
 
         markers = new ArrayList<Marker> ();
     }
@@ -140,7 +152,7 @@ public class Pad {
         if ("CLIENT_VARS".equals(type)) {
             setClientVars(json);
         } else if ("COLLABROOM".equals(type)) {
-            handleCollabRoom(json);
+            queueCollabRoom(json);
         } else {
             // unhandled message type
             System.out.print("unknown message type: " + type + ", keys: ");
@@ -161,7 +173,9 @@ public class Pad {
         socket = new SocketIO(url);
 
         client_connect_state = ClientConnectState.GETTING_SESSION_TOKEN;
-        session_token = getSessionToken(url);
+        if (session_token == null) {
+            session_token = getSessionToken(url);
+        }
         client_connect_state = ClientConnectState.GOT_SESSION_TOKEN;
         socket.addHeader("Cookie", session_token);
 
@@ -240,192 +254,149 @@ public class Pad {
         notifyAll();
     }
 
-    private synchronized void markNew() {
-        has_new_data = true;
-        notifyAll();
-    }
+    public void assertConnectionOK() throws PadException {
+        ClientConnectState ccs = client_connect_state;
 
-    public synchronized boolean hasNew() {
-        return has_new_data;
-    }
-
-    public boolean clientOK() {
-        return !(client_connect_state == ClientConnectState.NO_CONNECTION);
-    }
-
-    public synchronized boolean waitForNew() {
-        while (!has_new_data && clientOK()) {
-            try {
-                wait();
-            } catch (InterruptedException e) {}
-        }
-
-        return has_new_data;
-    }
-
-    public synchronized boolean waitForNew(long timeout_ms) {
-        long start_time = System.currentTimeMillis();
-
-        while (!has_new_data && clientOK() &&
-               start_time+timeout_ms < System.currentTimeMillis()) {
-            try {
-                wait();
-            } catch (InterruptedException e) {}
-        }
-
-        return has_new_data;
-    }
-
-    /*
-    public synchronized TextState getServerState() {
-        // grab a coherent copy of the state
-        // "changes" isn't well defined in this case
-        return new TextState(server_text, null, server_rev);
-    }
-    */
-
-    // 
-    public synchronized int registerMarker(int pos, boolean before, boolean valid) throws PadException {
-        markers.add(new Marker(pos, before, valid));
-        return markers.size()-1;
-    }
-
-    // only call when synchronized!
-    private void translateMarkers(Changeset cs) {
-        for (int i = 0; i < markers.size(); i++) {
-            markers.set(i, cs.translateMarker(markers.get(i)));
+        if (ccs != ClientConnectState.NORMAL) {
+            throw new PadException("connection is in bad state " + ccs);
         }
     }
 
-    // set "follow" true to have the marker move to the end of the inserted text
-    public synchronized void insertAtMarker(int marker_idx, String new_s, boolean follow) throws PadException {
-        Marker marker = markers.get(marker_idx);
-
-        int marker_old_pos = marker.pos;
-        int marker_offset = 0;
-
-        if (!marker.before) {
-            marker_offset = 1;
+    public boolean isConnecting() {
+        switch (client_connect_state) {
+        case NO_CONNECTION:
+            return false;
+        case GETTING_SESSION_TOKEN:
+        case GOT_SESSION_TOKEN:
+        case CONNECTING:
+        case SENT_CLIENT_READY:
+            return true;
+        case GOT_VARS:
+        case NORMAL:
+            // these are considered "connected"
+            return false;
         }
+
+        return false;
+    }
+
+    public boolean isConnected() {
+        switch (client_connect_state) {
+        case NO_CONNECTION:
+        case GETTING_SESSION_TOKEN:
+        case GOT_SESSION_TOKEN:
+        case CONNECTING:
+        case SENT_CLIENT_READY:
+            return false;
+        case GOT_VARS:
+        case NORMAL:
+            return true;
+        }
+
+        return false;
+    }
+
+    public boolean isDisconnected() {
+        switch (client_connect_state) {
+        case NO_CONNECTION:
+            return true;
+        case GETTING_SESSION_TOKEN:
+        case GOT_SESSION_TOKEN:
+        case CONNECTING:
+        case SENT_CLIENT_READY:
+        case GOT_VARS:
+        case NORMAL:
+            return false;
+        }
+
+        return false;
+    }
+
+    private synchronized void setClientVars(JSONObject json) throws PadException {
+        if (client_connect_state != ClientConnectState.SENT_CLIENT_READY) {
+            throw new PadException("setClientVars in unexpected state "+client_connect_state);
+        }
+
+        try {
+            client_vars = json.getJSONObject("data");
+            JSONObject collab_client_vars = client_vars.getJSONObject("collab_client_vars");
+
+            server_text = collab_client_vars.getJSONObject("initialAttributedText").getString("text");
+            server_rev = collab_client_vars.getLong("rev");
+
+            client_text = server_text;
+            client_rev = server_rev;
+
+            pending_changes = sent_changes = Changeset.identity(server_text.length());
+
+            client_connect_state = ClientConnectState.GOT_VARS;
+        } catch (JSONException e) {
+            throw new PadException("exception getting CLIENT_VARS data");
+        }
+    }
+
+    private synchronized void queueCollabRoom(JSONObject json) throws PadException {
+        if (!isConnected()) {
+            throw new PadException("queueCollabRoom in unexpected state "+client_connect_state);
+        }
+
+        collabroom_messages.add(json);
+    }
+
+    // most of the action is in here
+    // returns true if there is something new for the client
+    public synchronized boolean update(boolean is_sending, boolean is_receiving) throws PadException {
+        boolean has_new = false;
+
+        if (!isConnected()) {
+            return false;
+        }
+
+        if (client_connect_state == ClientConnectState.GOT_VARS) {
+            has_new = true;
+            client_connect_state = ClientConnectState.NORMAL;
+        }
+
+        if (is_receiving) {
+            while (!collabroom_messages.isEmpty()) {
+                JSONObject json = collabroom_messages.poll();
+                JSONObject data;
+                String collab_type;
+
+                try {
+                    data = json.getJSONObject("data");
+                    collab_type = data.getString("type");
+                } catch (JSONException e) {
+                    throw new PadException("error getting COLLABROOM metadata", e);
+                }
+
+                if (handleCollabRoom(data, collab_type)) {
+                    has_new = true;
+                }
+            }
+        }
+
+        if (is_sending) {
+            commitChanges();
+        }
+
+        return has_new;
+    }
+
+    // The main accessor, get a completely coherent snapshot.
+    // It is up to the client to not make any changes (by a call to
+    // update() or any of the change methods) if the client_text
+    // herein is to remain accurate
+    public synchronized TextState getState() {
+        Marker[] client_markers = new Marker[markers.size()];
         
-        try {
-            makeChangeInternal(Changeset.simpleEdit(client_text, marker_old_pos + marker_offset, 0, new_s));
-        } catch (ChangesetException e) {
-            throw new PadException("", e);
-        }
-
-        int marker_new_pos;
-
-        if (follow) {
-            // A[BC => A123[BC
-            // AB]C => AB123[C
-
-            marker_new_pos = marker_old_pos + new_s.length();
-        } else {
-            // A[BC => A[123BC
-            // AB]C => AB]123C
-            marker_new_pos = marker_old_pos;
-        }
-
-        markers.set(marker_idx, new Marker(marker_new_pos, marker.before, true));
+        client_markers = markers.toArray(client_markers);
+        return new TextState(server_text, server_rev, client_text, client_rev, client_markers);
     }
 
-    public synchronized void replaceBetweenMarkers(int start_marker_idx, int end_marker_idx, String new_s) throws PadException {
-        Marker start_marker = markers.get(start_marker_idx);
-        Marker end_marker = markers.get(end_marker_idx);
-
-        int start_pos = start_marker.pos;
-        int start_pos_offset = 0;
-        int end_pos = end_marker.pos;
-        int end_pos_offset = 0;
-
-        if (start_marker.before) {
-            // A[BC...
-            // replace includes this character, no change
-        } else {
-            // AB]C...
-            // replace excludes this character, inc
-            start_pos_offset = 1;
-        }
-
-        if (end_marker.before) {
-            // ...A[BC
-            // replace excludes this character, no change (end is noninclusive)
-        } else {
-            // ...AB]C
-            // replace includes this character, inc
-            end_pos_offset = 1;
-        }
-
-        if (end_pos + end_pos_offset < start_pos + start_pos_offset) {
-            throw new PadException("marked range ends before it begins");
-        }
-
-        try {
-            makeChangeInternal(Changeset.simpleEdit(client_text, start_pos + start_pos_offset, end_pos + end_pos_offset - (start_pos + start_pos_offset), new_s));
-        } catch (ChangesetException e) {
-            throw new PadException("", e);
-        }
-
-        // update markers (removing text generally invalidates markers)
-        markers.set(start_marker_idx, new Marker(start_pos - start_pos_offset, start_marker.before, true));
-        markers.set(end_marker_idx, new Marker(start_pos + new_s.length() - end_pos_offset, end_marker.before, true));
-    }
-
-    public synchronized TextState getClientState() {
-        has_new_data = false;
-        Marker[] out_markers = new Marker[markers.size()];
-        TextState ts = new TextState(client_text, client_rev, server_rev, markers.toArray(out_markers));
-        return ts;
-    }
-
-    // only call when synchronized!
-    private void makeChangeInternal(Changeset changeset) throws ChangesetException {
-        pending_changes = Changeset.compose(pending_changes, changeset);
-
-        client_text = changeset.applyToText(client_text);
-        translateMarkers(changeset);
-    }
-
-    public synchronized void makeChange(Changeset changeset) throws ChangesetException {
-        makeChangeInternal(changeset);
-    }
-
-    public synchronized void makeChange(int pos, int removing, String new_s) throws PadException {
-        try {
-            makeChangeInternal(Changeset.simpleEdit(client_text, pos, removing, new_s));
-        } catch (ChangesetException e) {
-            throw new PadException("error assembling or applying changeset", e);
-        }
-    }
-
-    // returns new marker index i, i and i+1 are markers for the appended text (i is a 'before' marker, i+1 is after)
-    public synchronized void prependTextAndMark(String new_s) throws PadException {
-        try {
-            makeChangeInternal(Changeset.simpleEdit(client_text, 0, 0, new_s));
-        } catch (ChangesetException e) {
-            throw new PadException("error assembling or applying prepend changeset", e);
-        }
-
-        markers.add(new Marker(0, true, true));
-        markers.add(new Marker(new_s.length()-1, false, true));
-    }
-
-    // returns new marker index i, i and i+1 are markers for the appended text (i is a 'before' marker, i+1 is after)
-    public synchronized int appendTextAndMark(String new_s) throws PadException {
-        int pos = client_text.length()-1;
-        try {
-            makeChangeInternal(Changeset.simpleEdit(client_text, pos, 0, new_s));
-        } catch (ChangesetException e) {
-            throw new PadException("error assembling or applying append changeset", e);
-        }
-
-        markers.add(new Marker(pos, true, true));
-        markers.add(new Marker(pos+new_s.length()-1, false, true));
-        return markers.size()-2;
-    }
-
-    public synchronized void commitChanges() throws PadException {
+    // only call when synchronized
+    // return true if anything was actually sent
+    private boolean commitChanges() throws PadException {
         if (sent_changes.isIdentity() && !pending_changes.isIdentity()) {
             JSONObject user_changes;
 
@@ -453,48 +424,17 @@ public class Pad {
 
             sent_changes = pending_changes;
             pending_changes = Changeset.identity(sent_changes.newLen);
+
+            return true;
         }
+
+        return false;
     }
 
-    private synchronized void setClientVars(JSONObject json) throws PadException {
-        if (client_connect_state != ClientConnectState.SENT_CLIENT_READY) {
-            throw new PadException("setClientVars in unexpected state "+client_connect_state);
-        }
-
-        client_connect_state = ClientConnectState.GOT_VARS;
-        try {
-            client_vars = json.getJSONObject("data");
-            JSONObject collab_client_vars = client_vars.getJSONObject("collab_client_vars");
-
-            server_text = collab_client_vars.getJSONObject("initialAttributedText").getString("text");
-            server_rev = collab_client_vars.getLong("rev");
-        } catch (JSONException e) {
-            throw new PadException("exception getting CLIENT_VARS data");
-        }
-
-        client_text = server_text;
-        client_rev = server_rev;
-
-        pending_changes = sent_changes = Changeset.identity(server_text.length());
-
-        markNew();
-    }
-
-    // most of the action is in here
-    private synchronized void handleCollabRoom(JSONObject json) throws PadException {
-        if (client_connect_state != ClientConnectState.GOT_VARS) {
-            throw new PadException("handleCollabRoom in unexpected state "+client_connect_state);
-        }
-
-        JSONObject data;
-        String collab_type;
-
-        try {
-            data = json.getJSONObject("data");
-            collab_type = data.getString("type");
-        } catch (JSONException e) {
-            throw new PadException("error getting COLLABROOM metadata", e);
-        }
+    // only call when synchronized
+    // returns true if there's something new for the client
+    private boolean handleCollabRoom(JSONObject data, String collab_type) throws PadException {
+        boolean has_new = false;
 
         if ("NEW_CHANGES".equals(collab_type)) {
             String changeset_str;
@@ -534,7 +474,7 @@ public class Pad {
                 // var c2 = c
                 Changeset fXB = B;
                 Changeset X_prime = sent_changes;
-                
+
                 // if (submittedChangeset) 
                 if (!sent_changes.isIdentity()) {
                     // var oldSubmittedChangeset = submittedChangeset;
@@ -570,10 +510,11 @@ public class Pad {
                 if (!D.isIdentity()) {
                     client_text = D.applyToText(client_text);
                     translateMarkers(D);
-                    markNew();
+
+                    has_new = true;
                 }
 
-                // check out that all these follows seem to work as intended
+                // DEBUG: check out that all these follows seem to work as intended
                 String server_would_see = pending_changes.applyToText(server_text);
                 if (!server_would_see.equals(client_text)) {
                     throw new PadException("out of sync, server would see\n'" + server_would_see + "'\nclient sees\n'" + client_text + "'\n");
@@ -605,7 +546,7 @@ public class Pad {
 
             if (pending_changes.isIdentity()) {
                 client_rev = new_rev;
-                // assert client_text == server_text?
+                // assert client_text.equals( server_text? )
             } else {
                 client_rev = -1;
             }
@@ -613,8 +554,7 @@ public class Pad {
             sent_changes = Changeset.identity(server_text.length());
 
             // the acceptance should not introduce any new data to the client
-            //markNew();
-
+            //has_new = true;
         } else if ("USER_NEWINFO".equals(collab_type)) {
             // ignore this for now
 
@@ -625,5 +565,166 @@ public class Pad {
             System.out.println("unsupported COLLABROOM message type = " + collab_type);
         }
 
+        return has_new;
+    }
+
+    // ********** Marker manipulation
+    // 
+    public int registerMarker(int pos, boolean before, boolean valid) throws PadException {
+        synchronized(markers) {
+            markers.add(new Marker(pos, before, valid));
+            return markers.size()-1;
+        }
+    }
+
+    private void translateMarkers(Changeset cs) {
+        synchronized(markers) {
+            for (int i = 0; i < markers.size(); i++) {
+                markers.set(i, cs.translateMarker(markers.get(i)));
+            }
+        }
+    }
+
+    // ********* Change interface
+
+    public synchronized void makeChange(Changeset changeset) throws ChangesetException {
+        makeChangeInternal(changeset);
+    }
+
+    public synchronized void makeChange(int pos, int removing, String new_s) throws PadException {
+        try {
+            makeChangeInternal(Changeset.simpleEdit(client_text, pos, removing, new_s));
+        } catch (ChangesetException e) {
+            throw new PadException("error assembling or applying changeset", e);
+        }
+    }
+
+    // set "follow" true to have the marker move to the end of the inserted text
+    public void insertAtMarker(int marker_idx, String new_s, boolean follow) throws PadException {
+        Marker marker = markers.get(marker_idx);
+
+        int marker_old_pos = marker.pos;
+        int marker_offset = 0;
+
+        if (!marker.before) {
+            marker_offset = 1;
+        }
+        
+        try {
+            makeChangeInternal(Changeset.simpleEdit(client_text, marker_old_pos + marker_offset, 0, new_s));
+        } catch (ChangesetException e) {
+            throw new PadException("", e);
+        }
+
+        int marker_new_pos;
+
+        if (follow) {
+            // A[BC => A123[BC
+            // AB]C => AB123[C
+
+            marker_new_pos = marker_old_pos + new_s.length();
+        } else {
+            // A[BC => A[123BC
+            // AB]C => AB]123C
+            marker_new_pos = marker_old_pos;
+        }
+
+        synchronized(markers) {
+            markers.set(marker_idx, new Marker(marker_new_pos, marker.before, true));
+        }
+    }
+
+    public void replaceBetweenMarkers(int start_marker_idx, int end_marker_idx, String new_s) throws PadException {
+        Marker start_marker = markers.get(start_marker_idx);
+        Marker end_marker = markers.get(end_marker_idx);
+
+        int start_pos = start_marker.pos;
+        int start_pos_offset = 0;
+        int end_pos = end_marker.pos;
+        int end_pos_offset = 0;
+
+        if (start_marker.before) {
+            // A[BC...
+            // replace includes this character, no change
+        } else {
+            // AB]C...
+            // replace excludes this character, inc
+            start_pos_offset = 1;
+        }
+
+        if (end_marker.before) {
+            // ...A[BC
+            // replace excludes this character, no change (end is noninclusive)
+        } else {
+            // ...AB]C
+            // replace includes this character, inc
+            end_pos_offset = 1;
+        }
+
+        if (end_pos + end_pos_offset < start_pos + start_pos_offset) {
+            throw new PadException("marked range ends before it begins");
+        }
+
+        try {
+            makeChangeInternal(Changeset.simpleEdit(client_text, start_pos + start_pos_offset, end_pos + end_pos_offset - (start_pos + start_pos_offset), new_s));
+        } catch (ChangesetException e) {
+            throw new PadException("", e);
+        }
+
+        // update markers (removing text generally invalidates markers)
+        synchronized(markers) {
+            markers.set(start_marker_idx, new Marker(start_pos - start_pos_offset, start_marker.before, true));
+            markers.set(end_marker_idx, new Marker(start_pos + new_s.length() - end_pos_offset, end_marker.before, true));
+        }
+    }
+
+    // returns new marker index i, i and i+1 are markers for the appended text (i is a 'before' marker, i+1 is after)
+    public int prependTextAndMark(String new_s) throws PadException {
+        try {
+            makeChangeInternal(Changeset.simpleEdit(client_text, 0, 0, new_s));
+        } catch (ChangesetException e) {
+            throw new PadException("error assembling or applying prepend changeset", e);
+        }
+
+        synchronized (markers) {
+            markers.add(new Marker(0, true, true));
+            markers.add(new Marker(new_s.length()-1, false, true));
+            return markers.size()-2;
+        }
+    }
+
+    public void appendText(String new_s) throws PadException {
+        int pos = client_text.length()-1;
+        try {
+            makeChangeInternal(Changeset.simpleEdit(client_text, pos, 0, new_s));
+        } catch (ChangesetException e) {
+            throw new PadException("error assembling or applying append changeset", e);
+        }
+    }
+
+    // returns new marker index i, i and i+1 are markers for the appended text (i is a 'before' marker, i+1 is after)
+    public int appendTextAndMark(String new_s) throws PadException {
+        int pos = client_text.length()-1;
+        try {
+            makeChangeInternal(Changeset.simpleEdit(client_text, pos, 0, new_s));
+        } catch (ChangesetException e) {
+            throw new PadException("error assembling or applying append changeset", e);
+        }
+
+        synchronized (markers) {
+            markers.add(new Marker(pos, true, true));
+            markers.add(new Marker(pos+new_s.length()-1, false, true));
+            return markers.size()-2;
+        }
+    }
+
+    // ********* private changeset application
+
+    // only call when synchronized!
+    private void makeChangeInternal(Changeset changeset) throws ChangesetException {
+        pending_changes = Changeset.compose(pending_changes, changeset);
+
+        client_text = changeset.applyToText(client_text);
+        translateMarkers(changeset);
     }
 }

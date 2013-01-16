@@ -37,11 +37,11 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
             this.x = x;
             this.y = y;
 
-            String new_circ = "g.setColor(Color.RED);\ng.drawArc(" + x + "," + y + ",100,100,0,360);\n";
+            String new_circ = "g.setColor(Color.RED);\ng.drawArc(" + x + "," + y + ",100,100,0,360);";
+            pad.appendText("\n");
             start_cursor_idx = pad.appendTextAndMark(new_circ);
             end_cursor_idx = start_cursor_idx + 1;
             updatePadState();
-            pad.commitChanges();
         }
 
         public Matcher matcher(CharSequence cs) {
@@ -62,10 +62,9 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
                 Matcher m = matcher(cs);
                 if (m.find()) {
                     x++; y++;
-                    String new_circ = "g.setColor(Color.RED);\ng.drawArc(" + x + "," + y + ",100,100,0,360);\n";
+                    String new_circ = "g.setColor(Color.RED);\ng.drawArc(" + x + "," + y + ",100,100,0,360);";
                     pad.replaceBetweenMarkers(start_cursor_idx, end_cursor_idx, new_circ);
                     updatePadState();
-                    pad.commitChanges();
                 } else {
                     System.out.println("no match");
                 }
@@ -127,14 +126,24 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
         URL codeBase = getCodeBase();
         try {
-            pad = new Pad(new URL(codeBase.getProtocol(), codeBase.getHost(), codeBase.getPort(), ""), "", null, pad_name);
+            pad = new Pad(
+                new URL(codeBase.getProtocol(), codeBase.getHost(), codeBase.getPort(), ""),
+                "",     // client_id
+                null,   // token
+                pad_name,
+                null    // session_token
+            );
+
             pad.connect();
         } catch (MalformedURLException e) {
             e.printStackTrace();
+            return;
         } catch (IOException e) {
             e.printStackTrace();
+            return;
         } catch (PadException e) {
             e.printStackTrace();
+            return;
         }
 
         err_str = "Waiting for initial text...";
@@ -181,14 +190,18 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     }
 
     public void updatePadState() {
-        TextState new_state = pad.getClientState();
-        new_code = new_state.text;
-        markers = new_state.markers;
+        TextState new_state = pad.getState();
+        new_code = new_state.client_text;
+        markers = new_state.client_markers;
     }
 
     public void update(Graphics g) {
-        if (pad.hasNew()) {
-            updatePadState();
+        try {
+            if (pad.update(true, true)) {
+                updatePadState();
+            }
+        } catch (PadException e) {
+            e.printStackTrace();
         }
 
         if (new_code != null) {
@@ -238,6 +251,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
                 err_str = e.toString();
                 err_line = -1;
                 code_state = CodeState.PARSE_ERROR;
+                new_code = null;
 
                 // re-eval old code
                 try {
