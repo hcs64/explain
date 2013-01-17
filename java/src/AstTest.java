@@ -34,7 +34,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     ArrayList<AstGlobalMethod> primitive_methods;
     ArrayList<AstGlobalMethod> object_methods;
 
-    Interpreter bsh;
+    Interpreter bsh_interp;
     Renderable bsh_renderable;
     Thread t;
     Image buffer_image;
@@ -65,13 +65,8 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     public void init() {
         buffer_image = null;
 
-        bsh = new Interpreter();
-
-        try {
-            bsh_renderable = (Renderable) bsh.getInterface(Renderable.class);
-        } catch (EvalError e) {
-            e.printStackTrace();
-        }
+        bsh_interp = null;
+        bsh_renderable = null;
 
         pad_name = getParameter("pad_name");
         if (pad_name == null) {
@@ -102,7 +97,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
         err_str = "Waiting for initial text...";
         code = null;
-        new_code = "";
+        new_code = "import graphics.Graphics2D; public void render(Graphics2D g, long t) {}";
         code_state = CodeState.HALTED;
 
         render_method = null;
@@ -143,12 +138,6 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
                 t.sleep(30);
             } catch (InterruptedException e) { }
         }
-    }
-
-    static final String RENDER_WRAP_PREFIX = "import graphics.Graphics2D;\n\npublic void render(graphics.Graphics2D g, long t) {\n";
-    static final String RENDER_WRAP_POSTFIX = "\n}\n";
-    public static String wrapForRender(String code) {
-        return RENDER_WRAP_PREFIX + code + RENDER_WRAP_POSTFIX;
     }
 
     public static int[] computeLineStarts(String s) {
@@ -194,9 +183,12 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
         if (new_code != null) {
             try {
-
                 start_time = System.currentTimeMillis();
-                bsh.eval(new_code);
+
+                bsh_interp = new Interpreter();
+
+                bsh_interp.eval(new_code);
+                bsh_renderable = (Renderable) bsh_interp.getInterface(Renderable.class);
 
                 code = new_code;
                 new_code = null;
@@ -216,7 +208,9 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
                 // re-eval old code
                 try {
-                    bsh.eval(code);
+                    bsh_interp = new Interpreter();
+                    bsh_interp.eval(code);
+                    bsh_renderable = (Renderable) bsh_interp.getInterface(Renderable.class);
                 } catch (EvalError e2) {
                     System.out.println("error " + e2.toString() + " reverting to previously ok code " + code);
 
