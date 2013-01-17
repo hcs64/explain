@@ -28,59 +28,10 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
         public void render(graphics.Graphics g, long t);
     }
 
-    class Circle {
-        private int x;
-        private int y;
-        private int start_cursor_idx;
-        private int end_cursor_idx;
-
-        public final Pattern p = Pattern.compile("g.setColor\\(Color\\.[A-Z]+\\);");
-
-        public Circle(int x, int y) throws PadException {
-            this.x = x;
-            this.y = y;
-
-            String new_circ = "g.setColor(Color.RED);\ng.drawArc(" + x + "," + y + ",100,100,0,360);";
-            pad.appendText("\n");
-            start_cursor_idx = pad.appendTextAndMark(new_circ);
-            end_cursor_idx = start_cursor_idx + 1;
-            updatePadState();
-        }
-
-        public Matcher matcher(CharSequence cs) {
-            return p.matcher(cs);
-        }
-
-        public boolean isValid() {
-            if (markers[start_cursor_idx].valid && markers[end_cursor_idx].valid) {
-                return true;
-            }
-
-            return false;
-        }
-
-        public void modify() throws PadException {
-            if (isValid()) {
-                CharSequence cs = code.subSequence(markers[start_cursor_idx].pos, markers[end_cursor_idx].pos+1);
-                Matcher m = matcher(cs);
-                if (m.find()) {
-                    x++; y++;
-                    String new_circ = "g.setColor(Color.RED);\ng.drawArc(" + x + "," + y + ",100,100,0,360);";
-                    pad.replaceBetweenMarkers(start_cursor_idx, end_cursor_idx, new_circ);
-                    updatePadState();
-                } else {
-                    System.out.println("no match");
-                }
-            } else {
-                System.out.println("not valid");
-            }
-        }
-
-        public void render(Graphics g) {
-            g.setColor(Color.BLACK);
-            g.drawRect(x,y,100,100);
-        }
-    }
+    AstGlobalMethod render_method;
+    ArrayList<AstGlobalMethod> endpoint_methods;
+    ArrayList<AstGlobalMethod> primitive_methods;
+    ArrayList<AstGlobalMethod> object_methods;
 
     Interpreter bsh;
     Renderable bsh_renderable;
@@ -98,12 +49,10 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     private CodeState code_state;
 
     String pad_name;
-    String wrapped_code;
     String code;
     String new_code;
     Pad pad;
 
-    LinkedList<Circle> known_circles;
     int[] line_starts;
     Marker[] markers;
 
@@ -152,11 +101,14 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
         err_str = "Waiting for initial text...";
         code = null;
-        wrapped_code = null;
         new_code = "";
         code_state = CodeState.HALTED;
 
-        known_circles = new LinkedList<Circle>();
+        render_method = null;
+        endpoint_methods = new ArrayList<AstGlobalMethod>();
+        primitive_methods = new ArrayList<AstGlobalMethod>();
+        object_methods = new ArrayList<AstGlobalMethod>();
+
         running = true;
         t = new Thread(this);
         t.start();
@@ -196,14 +148,6 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
         return RENDER_WRAP_PREFIX + code + RENDER_WRAP_POSTFIX;
     }
 
-    public int unwrapPosition(int pos) {
-        int adj_pos = pos - RENDER_WRAP_PREFIX.length();
-
-        if (adj_pos < 0) return 0;
-        if (adj_pos >= code.length()) return code.length()-1;
-        return adj_pos;
-    }
-
     public static int[] computeLineStarts(String s) {
         ArrayList<Integer> a = new ArrayList<Integer>();
 
@@ -222,12 +166,12 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     }
 
     public int tokenStart(Token t) {
-        return unwrapPosition(line_starts[t.beginLine-1] + t.beginColumn - 1);
+        return line_starts[t.beginLine-1] + t.beginColumn - 1;
     }
 
     // inclusive, the last char of the token
     public int tokenEnd(Token t) {
-        return unwrapPosition(line_starts[t.endLine-1] + t.endColumn - 1);
+        return line_starts[t.endLine-1] + t.endColumn - 1;
     }
 
     public void updatePadState() {
@@ -248,14 +192,11 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
         if (new_code != null) {
             try {
                 start_time = System.currentTimeMillis();
-                String new_wrapped_code = wrapForRender(new_code);
-                bsh.eval(new_wrapped_code);
+                bsh.eval(new_code);
 
                 code = new_code;
-                wrapped_code = new_wrapped_code;
                 new_code = null;
-                new_wrapped_code = null;
-                line_starts = computeLineStarts(wrapped_code);
+                line_starts = computeLineStarts(code);
 
                 code_state = CodeState.RUNNING;
 
@@ -269,7 +210,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
                 // re-eval old code
                 try {
-                    bsh.eval(wrapped_code);
+                    bsh.eval(code);
                 } catch (EvalError e2) {
                     System.out.println("error " + e2.toString() + " reverting to previously ok code " + code);
 
@@ -284,6 +225,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     }
 
     public void paint(Graphics g) {
+        long time = System.currentTimeMillis()-start_time;
         if (buffer_image == null || getBounds().width != r.width || getBounds().height != r.height) {
 
             buffer_image = createImage(getBounds().width, getBounds().height);
@@ -291,6 +233,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
             r = getBounds();
         }
+        Graphics2D buffer_graphics_2d = (Graphics2D)buffer_graphics;
 
         buffer_graphics.clearRect(0,0,r.width,r.height);
 
@@ -298,7 +241,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
         if (code_state != CodeState.HALTED) {
             try {
-                bsh_renderable.render(gw, System.currentTimeMillis()-start_time);
+                bsh_renderable.render(gw, time);
             } catch (UndeclaredThrowableException e) {
                 System.out.println("Runtime error, HALTING");
                 e.printStackTrace();
@@ -339,32 +282,49 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
             buffer_graphics.drawString(err_str, 25, 45);
         }
 
-        // draw objects
+        // draw render "holder" with its constituents 
+        if (render_method != null) {
+            int x = r.width-100;
+            int y = 300;
 
+            int block_elements = render_method.blockNode.jjtGetNumChildren();
+            for (int i = 0; i < block_elements; i++) {
+                SimpleNode node = render_method.blockNode.getChild(i);
+                if ((node instanceof BSHPrimaryExpression) && (node.getChild(0) instanceof BSHMethodInvocation)) {
+                    BSHMethodInvocation method_invocation = (BSHMethodInvocation)node.getChild(0);
+
+                    String name = method_invocation.getNameNode().text;
+                    BSHArguments args = method_invocation.getArgsNode();
+
+                    // now we want to be able to find and render that method
+                    // search backwards in case it is multiply declared...
+                    for (int j = endpoint_methods.size()-1; j >= 0; j--) {
+                        AstGlobalMethod meth = endpoint_methods.get(j);
+                        if (meth.method.name.equals(name)) {
+                            meth.renderNode(buffer_graphics_2d, time, x, y);
+                            y += 100;
+                        }
+                    }
+                }
+            }
+        }
+
+        // draw factories
+        {
+            int x = 10;
+            int y = 300;
+            for (AstGlobalMethod m : endpoint_methods) {
+                m.renderFactory(buffer_graphics_2d, x, y);
+                x += 100;
+            }
+        }
+
+        // blit!
         g.drawImage(buffer_image, 0, 0, this);
 
     }
 
     public void mouseClicked(MouseEvent e) {
-        /*
-        if (known_circles.size() == 0) {
-        try {
-            known_circles.add(new Circle(e.getX(), e.getY()));
-        } catch (PadException ex) {
-            ex.printStackTrace();
-        }
-        } else {
-
-        try {
-            for (ListIterator<Circle> i = known_circles.listIterator(); i.hasNext(); ) {
-                Circle c = i.next();
-                c.modify();
-            }
-        } catch (PadException ex) {
-            ex.printStackTrace();
-        }
-        }
-        */
     }
 
     public void mouseEntered(MouseEvent e) {
@@ -387,39 +347,16 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
     public void keyPressed(KeyEvent e) {
         try {
-            if (e.getKeyCode() == KeyEvent.VK_A) {
-                // parse the render declaration
-                StringReader sr = new StringReader(wrapped_code);
-                Parser p = new Parser(sr);
-                AstSearch pri_expr = new AstSearch(null, BSHPrimaryExpression.class, null);
-                AstSearch arc_call = new AstSearch(null, BSHMethodInvocation.class,
-                    new AstSearch[] {
-                        new AstSearch("AmbiguousName: g.drawArc", BSHAmbiguousName.class, null),
-                        new AstSearch(null, BSHArguments.class,
-                            new AstSearch[] { pri_expr, pri_expr, pri_expr, pri_expr, pri_expr, pri_expr })
-                    }
-                );
+            switch (e.getKeyCode()) {
+            case KeyEvent.VK_A:
+                collectMethods();
+                break;
 
-                while (!p.Line()) {
-                    SimpleNode node = p.popNode();
-
-                    if (node instanceof BSHMethodDeclaration) {
-                        BSHMethodDeclaration meth = (BSHMethodDeclaration) node;
-
-                        if (meth.name.equals("render")) {
-                            SimpleNode[] nodes = arc_call.search(meth, 3);
-
-                            for (int i = 0; i < nodes.length; i++) {
-                                SimpleNode circler = nodes[i];
-
-                                System.out.println(code.substring(tokenStart(circler.getFirstToken()), tokenEnd(circler.getLastToken())+1));
-                            }
-                        }
-                    }
-                }
-
+            case KeyEvent.VK_C:
+                break;
             }
         } catch (ParseException ex) {
+            ex.printStackTrace();
         }
     }
 
@@ -428,4 +365,139 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
     public void keyTyped(KeyEvent e) {
     }
+
+    void collectMethods() throws ParseException {
+        render_method = null;
+
+        endpoint_methods.clear();
+        primitive_methods.clear();
+        object_methods.clear();
+
+        // parse to find all function declarations
+        StringReader sr = new StringReader(code);
+        Parser p = new Parser(sr);
+
+        ArrayList<SimpleNode> decls = new ArrayList<SimpleNode>();
+        AstSearch decl_search = new AstSearch(null, BSHMethodDeclaration.class, null);
+
+        while (!p.Line()) {
+            SimpleNode node = p.popNode();
+
+            decl_search.searchRecurse(node, decls, 0);
+        }
+
+        for (int i = 0; i < decls.size(); i++) {
+            BSHMethodDeclaration method = (BSHMethodDeclaration)decls.get(i);
+            BSHReturnType returnTypeNode = null;
+            BSHFormalParameters paramsNode = null;
+            BSHBlock blockNode = null;
+
+            for (int j = 0; j < method.jjtGetNumChildren(); j++) {
+
+                SimpleNode node = method.getChild(j);
+                if (node instanceof BSHReturnType) {
+                    returnTypeNode = (BSHReturnType)node;
+                } else if (node instanceof BSHFormalParameters) {
+                    paramsNode = (BSHFormalParameters)node;
+                } else if (node instanceof BSHBlock) {
+                    blockNode = (BSHBlock)node;
+                }
+            }
+
+            if (returnTypeNode != null && paramsNode != null && blockNode != null) {
+                if (returnTypeNode.isVoid) {
+                    // no return, we'll assume that this renders something
+                    System.out.println("void " + method.name + "(" + paramsNode.toString() + ")");
+
+                    if (method.name.equals("render")) {
+                        // may want to check params as well
+                        render_method = new AstGlobalMethod(method, returnTypeNode, paramsNode, blockNode);
+                    } else {
+                        endpoint_methods.add(new AstGlobalMethod(method, returnTypeNode, paramsNode, blockNode));
+                    }
+                } else {
+                    BSHType return_type = returnTypeNode.getTypeNode();
+                    SimpleNode type = return_type.getTypeNode();
+
+                    if (type instanceof BSHPrimitiveType) {
+                        BSHPrimitiveType prim_type = (BSHPrimitiveType)type;
+                        Class real_type = prim_type.getType();
+
+                        primitive_methods.add(new AstGlobalMethod(method, returnTypeNode, paramsNode, blockNode, real_type));
+                    } else if (type instanceof BSHAmbiguousName) {
+                        BSHAmbiguousName name = (BSHAmbiguousName)type;
+
+                        object_methods.add(new AstGlobalMethod(method, returnTypeNode, paramsNode, blockNode, name.text));
+                    }
+                }
+            }
+        }
+
+/*
+        // parse the render declaration
+        StringReader sr = new StringReader(code);
+        Parser p = new Parser(sr);
+        AstSearch pri_expr = new AstSearch(null, BSHPrimaryExpression.class, null);
+        AstSearch fill_arc_call = new AstSearch(null, BSHMethodInvocation.class,
+                new AstSearch[] {
+                new AstSearch("g.fillArc", BSHAmbiguousName.class, null),
+                new AstSearch(null, BSHArguments.class,
+                    new AstSearch[] { pri_expr, pri_expr, pri_expr, pri_expr, pri_expr, pri_expr })
+                }
+                );
+        AstSearch render_decl = new AstSearch("render", BSHMethodDeclaration.class, null);
+
+        while (!p.Line()) {
+            SimpleNode node = p.popNode();
+
+            SimpleNode[] render_call = render_decl.search(node, 2);
+            if (render_call.length < 1) {
+                continue;
+            }
+
+            SimpleNode[] nodes = fill_arc_call.search(render_call[0], 3);
+
+            for (int i = 0; i < nodes.length; i++) {
+                BSHMethodInvocation circler = (BSHMethodInvocation) nodes[i];
+
+                System.out.println(code.substring(tokenStart(circler.getFirstToken()), tokenEnd(circler.getLastToken())+1));
+
+                BSHArguments args = circler.getArgsNode();
+                int[] arg_vals = new int[6];
+                boolean args_ok = true;
+
+                for (int j = 0; j < 6; j++) {
+                    BSHPrimaryExpression expr = (BSHPrimaryExpression)args.getChild(j);
+                    SimpleNode expr_child = expr.getChild(0);
+
+                    if (expr_child instanceof BSHLiteral) {
+                        BSHLiteral lit = (BSHLiteral)expr_child;
+                        Object val = lit.value;
+
+                        if (Primitive.class.isInstance(val)) {
+                            Primitive prim = (Primitive)val;
+                            Object prim_val = prim.getValue();
+
+                            if (Integer.class.isInstance(prim_val)) {
+                                arg_vals[j] = (Integer)prim_val;
+                            } else {
+                                args_ok = false;
+                            }
+                        } else {
+                            args_ok = false;
+                        }
+
+                    } else {
+                        args_ok = false;
+                    }
+                }
+
+                if (args_ok) {
+                    known_circles.add(new Circle(arg_vals[0], arg_vals[1], arg_vals[2], arg_vals[3], arg_vals[4], arg_vals[5]));
+                }
+            }
+        }
+    */
+    }
+
 }

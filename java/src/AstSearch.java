@@ -34,7 +34,15 @@ class AstSearch {
     public boolean matches(SimpleNode node) {
         boolean failed = false;
 
-        if (name != null && !name.equals(node.toString())) {
+        if (name == null) {
+            // ok
+        } else if ((node instanceof BSHAmbiguousName)       && ((BSHAmbiguousName)node).text.equals(name)) {
+            // ok
+        } else if ((node instanceof BSHMethodDeclaration)   && ((BSHMethodDeclaration)node).name.equals(name)) {
+            // ok
+        } else if (name.equals(node.toString())) {
+            // ok
+        } else {
             failed = true;
         }
 
