@@ -29,6 +29,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     }
 
     AstGlobalMethod render_method;
+    int render_end_marker_idx;
     ArrayList<AstGlobalMethod> endpoint_methods;
     ArrayList<AstGlobalMethod> primitive_methods;
     ArrayList<AstGlobalMethod> object_methods;
@@ -105,9 +106,11 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
         code_state = CodeState.HALTED;
 
         render_method = null;
+        render_end_marker_idx = -1;
         endpoint_methods = new ArrayList<AstGlobalMethod>();
         primitive_methods = new ArrayList<AstGlobalMethod>();
         object_methods = new ArrayList<AstGlobalMethod>();
+
 
         running = true;
         t = new Thread(this);
@@ -191,6 +194,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
         if (new_code != null) {
             try {
+
                 start_time = System.currentTimeMillis();
                 bsh.eval(new_code);
 
@@ -199,6 +203,8 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
                 line_starts = computeLineStarts(code);
 
                 code_state = CodeState.RUNNING;
+
+                collectMethods();
 
             } catch (EvalError e) {
                 System.out.println("eval error "+e.toString()+", not accepting new code:\n" + new_code);
@@ -218,6 +224,8 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
                     err_line = -1;
                     code_state = CodeState.HALTED;
                 }
+            } catch (PadException e) {
+                e.printStackTrace();
             }
         }
         
@@ -284,29 +292,10 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
         // draw render "holder" with its constituents 
         if (render_method != null) {
-            int x = r.width-100;
+            int x = r.width-104;
             int y = 300;
 
-            int block_elements = render_method.blockNode.jjtGetNumChildren();
-            for (int i = 0; i < block_elements; i++) {
-                SimpleNode node = render_method.blockNode.getChild(i);
-                if ((node instanceof BSHPrimaryExpression) && (node.getChild(0) instanceof BSHMethodInvocation)) {
-                    BSHMethodInvocation method_invocation = (BSHMethodInvocation)node.getChild(0);
-
-                    String name = method_invocation.getNameNode().text;
-                    BSHArguments args = method_invocation.getArgsNode();
-
-                    // now we want to be able to find and render that method
-                    // search backwards in case it is multiply declared...
-                    for (int j = endpoint_methods.size()-1; j >= 0; j--) {
-                        AstGlobalMethod meth = endpoint_methods.get(j);
-                        if (meth.method.name.equals(name)) {
-                            meth.renderNode(buffer_graphics_2d, time, x, y);
-                            y += 100;
-                        }
-                    }
-                }
-            }
+            render_method.renderAsHolder(buffer_graphics_2d, time, x, y, endpoint_methods, primitive_methods, object_methods);
         }
 
         // draw factories
@@ -315,7 +304,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
             int y = 300;
             for (AstGlobalMethod m : endpoint_methods) {
                 m.renderFactory(buffer_graphics_2d, x, y);
-                x += 100;
+                x += 104;
             }
         }
 
@@ -324,7 +313,86 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
     }
 
+    public void addToRender(AstGlobalMethod m) {
+        if (render_method != null) {
+            int endPos = tokenEnd(render_method.blockNode.getLastToken());
+
+            try {
+                StringBuilder invocation = new StringBuilder();
+
+                invocation.append('\n');
+                invocation.append(m.method.name);
+                invocation.append('(');
+
+                int params = m.paramsNode.jjtGetNumChildren();
+                for (int i = 0; i < params; i++) {
+                    BSHFormalParameter p = (BSHFormalParameter)m.paramsNode.getChild(i);
+                    SimpleNode type_node = ((BSHType)p.getChild(0)).getTypeNode();
+                    String param_name = p.name;
+
+                    if (type_node instanceof BSHAmbiguousName) {
+                        String param_type = ((BSHAmbiguousName)type_node).text;
+                        String default_val = "null";
+
+                        if (param_type.equals("Color") || param_type.endsWith(".Color")) {
+                            default_val = "Color.RED";
+                        } else if (param_type.equals("Graphics2D")) {
+                            default_val = "g";
+                        }
+
+                        invocation.append(default_val);
+                    } else if (type_node instanceof BSHPrimitiveType) {
+                        Class real_type = ((BSHPrimitiveType)type_node).getType();
+
+                        if (real_type == int.class) {
+                            int default_val = 10;
+
+                            // we'll probably want to stir these around a bit
+                            if (param_name.equals("x")) {
+                                default_val = 100;
+                            } else if (param_name.equals("y")) {
+                                default_val = 100;
+                            } else if (param_name.equals("radius")) {
+                                default_val = 50;
+                            } else if (param_name.equals("side")) {
+                                default_val = 100;
+                            } else if (param_name.equals("size")) {
+                                default_val = 100;
+                            }
+
+                            invocation.append(default_val);
+                        }
+                    }
+
+                    if (i < params-1) {
+                        invocation.append(", ");
+                    }
+                }
+
+                invocation.append(");\n");
+
+                pad.insertAtMarker(render_end_marker_idx, invocation.toString(), true);
+
+                updatePadState();
+            } catch (PadException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
     public void mouseClicked(MouseEvent e) {
+        // draw factories
+        {
+            int x = 10;
+            int y = 300;
+            for (AstGlobalMethod m : endpoint_methods) {
+                if (e.getX() >= x && e.getX() < x+70 && e.getY() >= y && e.getY() < y+50) {
+                    addToRender(m);
+                }
+                x += 104;
+            }
+        }
+
     }
 
     public void mouseEntered(MouseEvent e) {
@@ -346,18 +414,6 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     }
 
     public void keyPressed(KeyEvent e) {
-        try {
-            switch (e.getKeyCode()) {
-            case KeyEvent.VK_A:
-                collectMethods();
-                break;
-
-            case KeyEvent.VK_C:
-                break;
-            }
-        } catch (ParseException ex) {
-            ex.printStackTrace();
-        }
     }
 
     public void keyReleased(KeyEvent e) {
@@ -366,7 +422,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     public void keyTyped(KeyEvent e) {
     }
 
-    void collectMethods() throws ParseException {
+    void collectMethods() throws ParseException, PadException {
         render_method = null;
 
         endpoint_methods.clear();
@@ -407,11 +463,16 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
             if (returnTypeNode != null && paramsNode != null && blockNode != null) {
                 if (returnTypeNode.isVoid) {
                     // no return, we'll assume that this renders something
-                    System.out.println("void " + method.name + "(" + paramsNode.toString() + ")");
 
                     if (method.name.equals("render")) {
+                        int render_end_pos = tokenEnd(blockNode.getLastToken());
                         // may want to check params as well
                         render_method = new AstGlobalMethod(method, returnTypeNode, paramsNode, blockNode);
+                        if (render_end_marker_idx == -1) {
+                            render_end_marker_idx = pad.registerMarker(render_end_pos, true, true);
+                        } else {
+                            pad.reregisterMarker(render_end_marker_idx, render_end_pos, true, true);
+                        }
                     } else {
                         endpoint_methods.add(new AstGlobalMethod(method, returnTypeNode, paramsNode, blockNode));
                     }
@@ -433,71 +494,9 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
             }
         }
 
-/*
-        // parse the render declaration
-        StringReader sr = new StringReader(code);
-        Parser p = new Parser(sr);
-        AstSearch pri_expr = new AstSearch(null, BSHPrimaryExpression.class, null);
-        AstSearch fill_arc_call = new AstSearch(null, BSHMethodInvocation.class,
-                new AstSearch[] {
-                new AstSearch("g.fillArc", BSHAmbiguousName.class, null),
-                new AstSearch(null, BSHArguments.class,
-                    new AstSearch[] { pri_expr, pri_expr, pri_expr, pri_expr, pri_expr, pri_expr })
-                }
-                );
-        AstSearch render_decl = new AstSearch("render", BSHMethodDeclaration.class, null);
+        // in particular this is to let us know about the marker
+        updatePadState();
 
-        while (!p.Line()) {
-            SimpleNode node = p.popNode();
-
-            SimpleNode[] render_call = render_decl.search(node, 2);
-            if (render_call.length < 1) {
-                continue;
-            }
-
-            SimpleNode[] nodes = fill_arc_call.search(render_call[0], 3);
-
-            for (int i = 0; i < nodes.length; i++) {
-                BSHMethodInvocation circler = (BSHMethodInvocation) nodes[i];
-
-                System.out.println(code.substring(tokenStart(circler.getFirstToken()), tokenEnd(circler.getLastToken())+1));
-
-                BSHArguments args = circler.getArgsNode();
-                int[] arg_vals = new int[6];
-                boolean args_ok = true;
-
-                for (int j = 0; j < 6; j++) {
-                    BSHPrimaryExpression expr = (BSHPrimaryExpression)args.getChild(j);
-                    SimpleNode expr_child = expr.getChild(0);
-
-                    if (expr_child instanceof BSHLiteral) {
-                        BSHLiteral lit = (BSHLiteral)expr_child;
-                        Object val = lit.value;
-
-                        if (Primitive.class.isInstance(val)) {
-                            Primitive prim = (Primitive)val;
-                            Object prim_val = prim.getValue();
-
-                            if (Integer.class.isInstance(prim_val)) {
-                                arg_vals[j] = (Integer)prim_val;
-                            } else {
-                                args_ok = false;
-                            }
-                        } else {
-                            args_ok = false;
-                        }
-
-                    } else {
-                        args_ok = false;
-                    }
-                }
-
-                if (args_ok) {
-                    known_circles.add(new Circle(arg_vals[0], arg_vals[1], arg_vals[2], arg_vals[3], arg_vals[4], arg_vals[5]));
-                }
-            }
-        }
-    */
     }
 
 }

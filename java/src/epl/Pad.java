@@ -577,6 +577,12 @@ public class Pad {
         }
     }
 
+    public void reregisterMarker(int idx, int pos, boolean before, boolean valid) throws PadException {
+        synchronized(markers) {
+            markers.set(idx, new Marker(pos, before, valid));
+        }
+    }
+
     private void translateMarkers(Changeset cs) {
         synchronized(markers) {
             for (int i = 0; i < markers.size(); i++) {
