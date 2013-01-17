@@ -1096,6 +1096,7 @@ public class NameSpace implements Serializable, BshClassManager.Listener, NameSo
 		}
 
 		// Try absolute
+        /*
 		c = classForName( name );
 		if ( c != null ) {
 			// Cache unqualified names to prevent import check again
@@ -1103,6 +1104,7 @@ public class NameSpace implements Serializable, BshClassManager.Listener, NameSo
 				cacheClass( name, c );
 			return c;
 		}
+        */
 
 		// Not found
 		if ( Interpreter.DEBUG ) 
