@@ -220,5 +220,18 @@ class SimpleNode implements Node
 			
 		return text.toString();
 	}
+
+    /**
+        Additions for Explain
+     */
+    public Token getFirstToken()
+    {
+        return firstToken;
+    }
+
+    public Token getLastToken()
+    {
+        return lastToken;
+    }
 }
 

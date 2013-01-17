@@ -11,15 +11,18 @@ import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 import java.util.LinkedList;
 import java.util.ListIterator;
+import java.util.ArrayList;
 
 import epl.Pad;
 import epl.PadException;
 import epl.TextState;
 import epl.Marker;
 
-public class AstTest extends java.applet.Applet implements Runnable, MouseListener, MouseMotionListener {
+public class AstTest extends java.applet.Applet implements Runnable, MouseListener, MouseMotionListener, KeyListener {
     volatile boolean running = false;
     boolean animating = false;
+    boolean should_send = true;
+    boolean should_recv = true;
 
     public interface Renderable {
         public void render(graphics.Graphics g, long t);
@@ -101,6 +104,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     Pad pad;
 
     LinkedList<Circle> known_circles;
+    int[] line_starts;
     Marker[] markers;
 
     long start_time;
@@ -169,6 +173,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     public void start() {
         addMouseListener(this);
         addMouseMotionListener(this);
+        addKeyListener(this);
     }
 
     public void stop() {
@@ -185,8 +190,44 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
         }
     }
 
+    static final String RENDER_WRAP_PREFIX = "import graphics.Graphics2D;\n\npublic void render(graphics.Graphics2D g, long t) {\n";
+    static final String RENDER_WRAP_POSTFIX = "\n}\n";
     public static String wrapForRender(String code) {
-        return "import graphics.Graphics2D;\n\npublic void render(graphics.Graphics2D g, long t) {\n" + code + "\n}\n";
+        return RENDER_WRAP_PREFIX + code + RENDER_WRAP_POSTFIX;
+    }
+
+    public int unwrapPosition(int pos) {
+        int adj_pos = pos - RENDER_WRAP_PREFIX.length();
+
+        if (adj_pos < 0) return 0;
+        if (adj_pos >= code.length()) return code.length()-1;
+        return adj_pos;
+    }
+
+    public static int[] computeLineStarts(String s) {
+        ArrayList<Integer> a = new ArrayList<Integer>();
+
+        int pos = -1;
+        do {
+            pos++;
+            a.add(pos);
+        } while ((pos = s.indexOf('\n', pos)) >= 0);
+
+        int[] array = new int[a.size()];
+        for (int i = 0; i < a.size(); i++) {
+            array[i] = a.get(i);
+        }
+
+        return array;
+    }
+
+    public int tokenStart(Token t) {
+        return unwrapPosition(line_starts[t.beginLine-1] + t.beginColumn - 1);
+    }
+
+    // inclusive, the last char of the token
+    public int tokenEnd(Token t) {
+        return unwrapPosition(line_starts[t.endLine-1] + t.endColumn - 1);
     }
 
     public void updatePadState() {
@@ -197,7 +238,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
     public void update(Graphics g) {
         try {
-            if (pad.update(true, true)) {
+            if (pad.update(should_send, should_recv)) {
                 updatePadState();
             }
         } catch (PadException e) {
@@ -212,38 +253,11 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
                 code = new_code;
                 wrapped_code = new_wrapped_code;
+                new_code = null;
+                new_wrapped_code = null;
+                line_starts = computeLineStarts(wrapped_code);
 
                 code_state = CodeState.RUNNING;
-
-                // parse the render declaration
-                /*
-                StringReader sr = new StringReader(wrapped_code);
-                Parser p = new Parser(sr);
-
-                while (!p.Line()) {
-                    SimpleNode node = p.popNode();
-                    if (node instanceof BSHMethodDeclaration) {
-                        BSHMethodDeclaration meth = (BSHMethodDeclaration) node;
-
-                        if (meth.name.equals("render")) {
-                            int children = node.jjtGetNumChildren();
-
-                            for (int i = 0; i < children; i++) {
-                                SimpleNode child = node.getChild(i);
-
-                                if (child instanceof BSHBlock) {
-                                    BSHBlock b = (BSHBlock) child;
-
-                                    int block_children = b.jjtGetNumChildren();
-                                    for (int j = 0; j < block_children; j++) {
-                                        System.out.println(b.getChild(j));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                */
 
             } catch (EvalError e) {
                 System.out.println("eval error "+e.toString()+", not accepting new code:\n" + new_code);
@@ -255,7 +269,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
                 // re-eval old code
                 try {
-                    bsh.eval(code);
+                    bsh.eval(wrapped_code);
                 } catch (EvalError e2) {
                     System.out.println("error " + e2.toString() + " reverting to previously ok code " + code);
 
@@ -332,6 +346,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     }
 
     public void mouseClicked(MouseEvent e) {
+        /*
         if (known_circles.size() == 0) {
         try {
             known_circles.add(new Circle(e.getX(), e.getY()));
@@ -349,6 +364,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
             ex.printStackTrace();
         }
         }
+        */
     }
 
     public void mouseEntered(MouseEvent e) {
@@ -367,5 +383,49 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     }
 
     public void mouseDragged(MouseEvent e) {
+    }
+
+    public void keyPressed(KeyEvent e) {
+        try {
+            if (e.getKeyCode() == KeyEvent.VK_A) {
+                // parse the render declaration
+                StringReader sr = new StringReader(wrapped_code);
+                Parser p = new Parser(sr);
+                AstSearch pri_expr = new AstSearch(null, BSHPrimaryExpression.class, null);
+                AstSearch arc_call = new AstSearch(null, BSHMethodInvocation.class,
+                    new AstSearch[] {
+                        new AstSearch("AmbiguousName: g.drawArc", BSHAmbiguousName.class, null),
+                        new AstSearch(null, BSHArguments.class,
+                            new AstSearch[] { pri_expr, pri_expr, pri_expr, pri_expr, pri_expr, pri_expr })
+                    }
+                );
+
+                while (!p.Line()) {
+                    SimpleNode node = p.popNode();
+
+                    if (node instanceof BSHMethodDeclaration) {
+                        BSHMethodDeclaration meth = (BSHMethodDeclaration) node;
+
+                        if (meth.name.equals("render")) {
+                            SimpleNode[] nodes = arc_call.search(meth, 3);
+
+                            for (int i = 0; i < nodes.length; i++) {
+                                SimpleNode circler = nodes[i];
+
+                                System.out.println(code.substring(tokenStart(circler.getFirstToken()), tokenEnd(circler.getLastToken())+1));
+                            }
+                        }
+                    }
+                }
+
+            }
+        } catch (ParseException ex) {
+        }
+    }
+
+    public void keyReleased(KeyEvent e) {
+    }
+
+    public void keyTyped(KeyEvent e) {
     }
 }
