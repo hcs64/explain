@@ -33,6 +33,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     ArrayList<AstGlobalMethod> endpoint_methods;
     ArrayList<AstGlobalMethod> primitive_methods;
     ArrayList<AstGlobalMethod> object_methods;
+    ArrayList<Boxy> boxes;
 
     Interpreter bsh_interp;
     Renderable bsh_renderable;
@@ -105,7 +106,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
         endpoint_methods = new ArrayList<AstGlobalMethod>();
         primitive_methods = new ArrayList<AstGlobalMethod>();
         object_methods = new ArrayList<AstGlobalMethod>();
-
+        boxes = new ArrayList<Boxy>();
 
         running = true;
         t = new Thread(this);
@@ -168,7 +169,13 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
     public void updatePadState() {
         TextState new_state = pad.getState();
+
         new_code = new_state.client_text;
+        markers = new_state.client_markers;
+    }
+
+    public void updateMarkers() {
+        TextState new_state = pad.getState();
         markers = new_state.client_markers;
     }
 
@@ -416,7 +423,21 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     public void keyTyped(KeyEvent e) {
     }
 
+    Boxy findBoxy(int start_pos, int end_pos) {
+        for (Boxy b : boxes) {
+            Marker start_marker = markers[b.start_marker_idx];
+            Marker end_marker = markers[b.end_marker_idx];
+
+            if (start_marker.valid && end_marker.valid && start_marker.pos == start_pos && end_marker.pos == end_pos) {
+                return b;
+            }
+        }
+
+        return null;
+    }
+
     void collectMethods() throws ParseException, PadException {
+        ArrayList<Boxy> new_boxes = new ArrayList<Boxy>();
         render_method = null;
 
         endpoint_methods.clear();
@@ -468,7 +489,17 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
                             pad.reregisterMarker(render_end_marker_idx, render_end_pos, true, true);
                         }
                     } else {
+                        int start_pos = tokenStart(method.getFirstToken());
+                        int end_pos = tokenEnd(method.getLastToken());
                         endpoint_methods.add(new AstGlobalMethod(method, returnTypeNode, paramsNode, blockNode));
+
+                        Boxy b = findBoxy(start_pos, end_pos);
+                        if (b != null) {
+                            System.out.println("matched "+b.name+" with "+method.name);
+                            new_boxes.add(new Boxy(b));
+                        } else {
+                            new_boxes.add(new Boxy(method.name, pad.registerMarker(start_pos, true, true), pad.registerMarker(end_pos, false, true)));
+                        }
                     }
                 } else {
                     BSHType return_type = returnTypeNode.getTypeNode();
@@ -488,8 +519,8 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
             }
         }
 
-        // in particular this is to let us know about the marker
-        updatePadState();
+        updateMarkers();
+        boxes = new_boxes;
 
     }
 
