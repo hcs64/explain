@@ -33,7 +33,7 @@
 
 package bsh;
 
-class BSHSwitchLabel extends SimpleNode {
+public class BSHSwitchLabel extends SimpleNode {
 	boolean isDefault;
 
 	public BSHSwitchLabel(int id) { super(id); }

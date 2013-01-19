@@ -38,7 +38,7 @@ import java.util.Hashtable;
 import java.lang.reflect.Array;
 import java.lang.reflect.InvocationTargetException;
 
-class BSHPrimarySuffix extends SimpleNode
+public class BSHPrimarySuffix extends SimpleNode
 {
 	public static final int
 		CLASS = 0,

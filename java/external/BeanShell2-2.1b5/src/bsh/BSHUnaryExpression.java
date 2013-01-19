@@ -34,7 +34,7 @@
 
 package bsh;
 
-class BSHUnaryExpression extends SimpleNode implements ParserConstants
+public class BSHUnaryExpression extends SimpleNode implements ParserConstants
 {
     public int kind;
 	public boolean postfix = false;

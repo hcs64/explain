@@ -37,7 +37,7 @@ package bsh;
 	A formal parameter declaration.
 	For loose variable declaration type is null.
 */
-class BSHFormalParameter extends SimpleNode
+public class BSHFormalParameter extends SimpleNode
 {
 	public static final Class UNTYPED = null;
 	public String name;

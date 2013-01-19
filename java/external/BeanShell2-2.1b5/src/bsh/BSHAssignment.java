@@ -34,7 +34,7 @@
 
 package bsh;
 
-class BSHAssignment extends SimpleNode implements ParserConstants
+public class BSHAssignment extends SimpleNode implements ParserConstants
 {
     public int operator;
 

@@ -34,7 +34,7 @@
 
 package bsh;
 
-class BSHThrowStatement extends SimpleNode
+public class BSHThrowStatement extends SimpleNode
 {
 	BSHThrowStatement(int id) { super(id); }
 

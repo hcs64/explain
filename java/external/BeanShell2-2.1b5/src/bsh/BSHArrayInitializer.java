@@ -36,7 +36,7 @@ package bsh;
 
 import java.lang.reflect.Array;
 
-class BSHArrayInitializer extends SimpleNode
+public class BSHArrayInitializer extends SimpleNode
 {
     BSHArrayInitializer(int id) { super(id); }
 

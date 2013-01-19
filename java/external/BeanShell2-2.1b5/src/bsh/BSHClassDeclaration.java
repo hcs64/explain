@@ -35,7 +35,7 @@ package bsh;
 
 /**
 */
-class BSHClassDeclaration extends SimpleNode
+public class BSHClassDeclaration extends SimpleNode
 {
 	/**
 		The class instance initializer method name.

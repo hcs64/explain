@@ -34,13 +34,13 @@
 
 package bsh;
 
-class BSHReturnType extends SimpleNode
+public class BSHReturnType extends SimpleNode
 {
 	public boolean isVoid;
 
 	BSHReturnType(int id) { super(id); }
 
-	BSHType getTypeNode() { 
+	public BSHType getTypeNode() { 
 		return (BSHType)jjtGetChild(0);
 	}
 

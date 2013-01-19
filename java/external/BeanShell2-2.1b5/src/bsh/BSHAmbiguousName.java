@@ -34,7 +34,7 @@
 
 package bsh;
 
-class BSHAmbiguousName extends SimpleNode
+public class BSHAmbiguousName extends SimpleNode
 {
     public String text;
 

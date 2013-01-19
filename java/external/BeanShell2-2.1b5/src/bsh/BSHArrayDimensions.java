@@ -40,7 +40,7 @@ import java.lang.reflect.Array;
 	The name of this class is somewhat misleading.  This covers both the case
 	where there is an array initializer and 
 */
-class BSHArrayDimensions extends SimpleNode
+public class BSHArrayDimensions extends SimpleNode
 {
 	public Class baseType;
     public int numDefinedDims;

@@ -34,7 +34,7 @@
 
 package bsh;
 
-class BSHArguments extends SimpleNode
+public class BSHArguments extends SimpleNode
 {
     BSHArguments(int id) { super(id); }
 

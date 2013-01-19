@@ -38,7 +38,7 @@ package bsh;
 	name [ = initializer ]
 	evaluate name and return optional initializer
 */
-class BSHVariableDeclarator extends SimpleNode
+public class BSHVariableDeclarator extends SimpleNode
 {
 	// The token.image text of the name... never changes.
     public String name;

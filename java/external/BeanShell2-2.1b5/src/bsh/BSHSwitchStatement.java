@@ -33,7 +33,7 @@
 
 package bsh;
 
-class BSHSwitchStatement 
+public class BSHSwitchStatement 
 	extends SimpleNode 
 	implements ParserConstants 
 {

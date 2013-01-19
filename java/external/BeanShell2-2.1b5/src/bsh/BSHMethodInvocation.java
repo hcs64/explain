@@ -36,15 +36,15 @@ package bsh;
 
 import java.lang.reflect.InvocationTargetException;
 
-class BSHMethodInvocation extends SimpleNode
+public class BSHMethodInvocation extends SimpleNode
 {
 	BSHMethodInvocation (int id) { super(id); }
 
-	BSHAmbiguousName getNameNode() {
+	public BSHAmbiguousName getNameNode() {
 		return (BSHAmbiguousName)jjtGetChild(0);
 	}
 
-	BSHArguments getArgsNode() {
+	public BSHArguments getArgsNode() {
 		return (BSHArguments)jjtGetChild(1);
 	}
 

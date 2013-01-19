@@ -34,7 +34,7 @@
 
 package bsh;
 
-class BSHIfStatement extends SimpleNode
+public class BSHIfStatement extends SimpleNode
 {
     BSHIfStatement(int id) { super(id); }
 

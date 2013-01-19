@@ -33,7 +33,7 @@
 
 package bsh;
 
-class BSHMethodDeclaration extends SimpleNode
+public class BSHMethodDeclaration extends SimpleNode
 {
 	public String name;
 

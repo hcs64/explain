@@ -34,7 +34,7 @@
 
 package bsh;
 
-class BSHBlock extends SimpleNode
+public class BSHBlock extends SimpleNode
 {
 	public boolean isSynchronized = false;
 

@@ -34,7 +34,7 @@
 
 package bsh;
 
-class BSHPrimitiveType extends SimpleNode
+public class BSHPrimitiveType extends SimpleNode
 {
 	public Class type;
 

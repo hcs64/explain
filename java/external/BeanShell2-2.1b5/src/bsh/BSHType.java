@@ -36,7 +36,7 @@ package bsh;
 
 import java.lang.reflect.Array;
 
-class BSHType extends SimpleNode 
+public class BSHType extends SimpleNode 
 	implements BshClassManager.Listener
 {
 	/**
@@ -70,7 +70,7 @@ class BSHType extends SimpleNode
 		arrayDims++; 
 	}
 
-	SimpleNode getTypeNode() {
+	public SimpleNode getTypeNode() {
         return (SimpleNode)jjtGetChild(0);
 	}
 

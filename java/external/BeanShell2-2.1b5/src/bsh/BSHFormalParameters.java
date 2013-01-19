@@ -33,7 +33,7 @@
 
 package bsh;
 
-class BSHFormalParameters extends SimpleNode
+public class BSHFormalParameters extends SimpleNode
 {
 	private String [] paramNames;
 	/**

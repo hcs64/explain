@@ -38,7 +38,7 @@ import java.util.List;
 import java.util.ArrayList;
 
 
-class BSHTryStatement extends SimpleNode
+public class BSHTryStatement extends SimpleNode
 {
 	BSHTryStatement(int id)
 	{

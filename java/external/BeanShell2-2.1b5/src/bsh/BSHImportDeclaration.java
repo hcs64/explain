@@ -34,7 +34,7 @@
 
 package bsh;
 
-class BSHImportDeclaration extends SimpleNode
+public class BSHImportDeclaration extends SimpleNode
 {
 	public boolean importPackage;
 	public boolean staticImport;

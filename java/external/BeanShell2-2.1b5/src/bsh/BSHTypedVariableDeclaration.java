@@ -33,7 +33,7 @@
 
 package bsh;
 
-class BSHTypedVariableDeclaration extends SimpleNode
+public class BSHTypedVariableDeclaration extends SimpleNode
 {
 	public Modifiers modifiers;
 	

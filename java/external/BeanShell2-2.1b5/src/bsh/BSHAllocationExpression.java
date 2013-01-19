@@ -40,7 +40,7 @@ import java.lang.reflect.InvocationTargetException;
 /**
 	New object, new array, or inner class style allocation with body.
 */
-class BSHAllocationExpression extends SimpleNode
+public class BSHAllocationExpression extends SimpleNode
 {
     BSHAllocationExpression(int id) { super(id); }
 	private static int innerClassCount = 0;

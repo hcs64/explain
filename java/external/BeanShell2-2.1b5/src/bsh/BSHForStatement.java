@@ -37,7 +37,7 @@ package bsh;
 /**
 	Implementation of the for(;;) statement.
 */
-class BSHForStatement extends SimpleNode implements ParserConstants
+public class BSHForStatement extends SimpleNode implements ParserConstants
 {
     public boolean hasForInit;
     public boolean hasExpression;

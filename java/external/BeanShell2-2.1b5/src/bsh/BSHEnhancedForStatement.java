@@ -11,7 +11,7 @@ import java.util.*;
 	 @author Daniel Leuck 
 	 @author Pat Niemeyer
 */
-class BSHEnhancedForStatement extends SimpleNode implements ParserConstants 
+public class BSHEnhancedForStatement extends SimpleNode implements ParserConstants 
 {
 	String varName;
 

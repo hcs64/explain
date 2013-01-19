@@ -39,7 +39,7 @@ package bsh;
 	Note: this is too complicated... need some cleanup and simplification.
 	@see Primitive.binaryOperation
 */
-class BSHBinaryExpression extends SimpleNode 
+public class BSHBinaryExpression extends SimpleNode 
 	implements ParserConstants 
 {
     public int kind;

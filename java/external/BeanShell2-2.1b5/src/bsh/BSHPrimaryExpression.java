@@ -34,7 +34,7 @@
 
 package bsh;
 
-class BSHPrimaryExpression extends SimpleNode
+public class BSHPrimaryExpression extends SimpleNode
 {
 	BSHPrimaryExpression(int id) { super(id); }
 

@@ -39,7 +39,7 @@ package bsh;
 	expressions from being naively evaluated...  e.g. for "foo && bar" bar 
 	should not be evaluated in the case where foo is true.
 */
-class BSHTernaryExpression extends SimpleNode {
+public class BSHTernaryExpression extends SimpleNode {
 
     BSHTernaryExpression(int id) { super(id); }
 
