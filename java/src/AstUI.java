@@ -113,8 +113,9 @@ public class AstUI {
         public void placeChildren() {
             int y = this.y;
 
-            int block_elements = method.blockNode.jjtGetNumChildren();
+            clearChildren();
 
+            int block_elements = method.blockNode.jjtGetNumChildren();
             y+=22;
 
             for (int i = 0; i < block_elements; i++) {
@@ -327,7 +328,6 @@ public class AstUI {
 
                             he.x = 400-104;
                             he.y = 300;
-                            he.placeChildren();
                             he.placed = true;
 
                             new_elements.add(he);
@@ -362,6 +362,13 @@ public class AstUI {
                         object_methods.add(method);
                     }
                 }
+            }
+        }
+
+        // names mentioned in a holder may have been declared after the holder
+        for (Element e : new_elements) {
+            if (e instanceof HolderElement) {
+                ((HolderElement)e).placeChildren();
             }
         }
 
