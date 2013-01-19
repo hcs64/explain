@@ -1,9 +1,6 @@
-package bsh;
-
 import java.awt.*;
 import java.awt.event.*;
 import java.io.IOException;
-import java.io.StringReader;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.lang.reflect.UndeclaredThrowableException;
@@ -12,11 +9,15 @@ import java.util.regex.Matcher;
 import java.util.LinkedList;
 import java.util.ListIterator;
 import java.util.ArrayList;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 import epl.Pad;
 import epl.PadException;
 import epl.TextState;
 import epl.Marker;
+
+import bsh.Interpreter;
+import bsh.EvalError;
 
 public class AstTest extends java.applet.Applet implements Runnable, MouseListener, MouseMotionListener, KeyListener {
     volatile boolean running = false;
@@ -28,13 +29,6 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
         public void render(graphics.Graphics g, long t);
     }
 
-    AstGlobalMethod render_method;
-    int render_end_marker_idx;
-    ArrayList<AstGlobalMethod> endpoint_methods;
-    ArrayList<AstGlobalMethod> primitive_methods;
-    ArrayList<AstGlobalMethod> object_methods;
-    ArrayList<Boxy> boxes;
-
     Interpreter bsh_interp;
     Renderable bsh_renderable;
     Thread t;
@@ -42,6 +36,9 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     Graphics buffer_graphics;
     Rectangle r = new Rectangle(0,0,0,0);
     Font error_font = new Font("Monospaced", Font.PLAIN, 14);
+
+    AstUI ui;
+    ConcurrentLinkedQueue<AstUI.MouseEvent> input_queue;
 
     enum CodeState {
         RUNNING,
@@ -55,7 +52,6 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     String new_code;
     Pad pad;
 
-    int[] line_starts;
     Marker[] markers;
 
     long start_time;
@@ -101,12 +97,9 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
         new_code = "import graphics.Graphics2D; public void render(Graphics2D g, long t) {}";
         code_state = CodeState.HALTED;
 
-        render_method = null;
-        render_end_marker_idx = -1;
-        endpoint_methods = new ArrayList<AstGlobalMethod>();
-        primitive_methods = new ArrayList<AstGlobalMethod>();
-        object_methods = new ArrayList<AstGlobalMethod>();
-        boxes = new ArrayList<Boxy>();
+        input_queue = new ConcurrentLinkedQueue<AstUI.MouseEvent>();
+        ui = new AstUI();
+        ui.init();
 
         running = true;
         t = new Thread(this);
@@ -141,32 +134,6 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
         }
     }
 
-    public static int[] computeLineStarts(String s) {
-        ArrayList<Integer> a = new ArrayList<Integer>();
-
-        int pos = -1;
-        do {
-            pos++;
-            a.add(pos);
-        } while ((pos = s.indexOf('\n', pos)) >= 0);
-
-        int[] array = new int[a.size()];
-        for (int i = 0; i < a.size(); i++) {
-            array[i] = a.get(i);
-        }
-
-        return array;
-    }
-
-    public int tokenStart(Token t) {
-        return line_starts[t.beginLine-1] + t.beginColumn - 1;
-    }
-
-    // inclusive, the last char of the token
-    public int tokenEnd(Token t) {
-        return line_starts[t.endLine-1] + t.endColumn - 1;
-    }
-
     public void updatePadState() {
         TextState new_state = pad.getState();
 
@@ -180,8 +147,23 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     }
 
     public void update(Graphics g) {
+        // 1. process UI event queue, which will generate edit requests
+        ArrayList<AstUI.EditRequest> edit_requests = ui.gatherUIRequests(input_queue);
+
+        // 2. apply requests to pad
+        boolean local_edits = (edit_requests.size() > 0);
+        for (AstUI.EditRequest r : edit_requests) {
+            try {
+                r.apply(pad);
+            } catch (PadException e) {
+                e.printStackTrace();
+            }
+        }
+        edit_requests.clear();
+
+        // 3. update
         try {
-            if (pad.update(should_send, should_recv)) {
+            if (pad.update(should_send, should_recv) || local_edits) {
                 updatePadState();
             }
         } catch (PadException e) {
@@ -190,6 +172,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
         if (new_code != null) {
             try {
+                // 4. reparse
                 start_time = System.currentTimeMillis();
 
                 bsh_interp = new Interpreter();
@@ -199,11 +182,12 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
                 code = new_code;
                 new_code = null;
-                line_starts = computeLineStarts(code);
 
                 code_state = CodeState.RUNNING;
 
-                collectMethods();
+                // 5. regenerate UI
+                ui.generateUI(code, pad, markers);
+                updateMarkers();
 
             } catch (EvalError e) {
                 System.out.println("eval error "+e.toString()+", not accepting new code:\n" + new_code);
@@ -228,8 +212,10 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
             } catch (PadException e) {
                 e.printStackTrace();
             }
-        }
-        
+
+        } // end "if (new_code != null)"
+
+        // 6. render UI and run user code
         paint(g);
     }
 
@@ -242,7 +228,6 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
             r = getBounds();
         }
-        Graphics2D buffer_graphics_2d = (Graphics2D)buffer_graphics;
 
         buffer_graphics.clearRect(0,0,r.width,r.height);
 
@@ -276,6 +261,8 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
             }
         }
 
+        ui.render(buffer_graphics, r.width, r.height);
+
         // draw error bar
         if (code_state == CodeState.PARSE_ERROR || code_state == CodeState.HALTED) {
 
@@ -291,109 +278,12 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
             buffer_graphics.drawString(err_str, 25, 45);
         }
 
-        // draw render "holder" with its constituents 
-        if (render_method != null) {
-            int x = r.width-104;
-            int y = 300;
-
-            render_method.renderAsHolder(buffer_graphics_2d, time, x, y, endpoint_methods, primitive_methods, object_methods);
-        }
-
-        // draw factories
-        {
-            int x = 10;
-            int y = 300;
-            for (AstGlobalMethod m : endpoint_methods) {
-                m.renderFactory(buffer_graphics_2d, x, y);
-                x += 104;
-            }
-        }
-
         // blit!
         g.drawImage(buffer_image, 0, 0, this);
 
     }
 
-    public void addToRender(AstGlobalMethod m) {
-        if (render_method != null) {
-            int endPos = tokenEnd(render_method.blockNode.getLastToken());
-
-            try {
-                StringBuilder invocation = new StringBuilder();
-
-                invocation.append('\n');
-                invocation.append(m.method.name);
-                invocation.append('(');
-
-                int params = m.paramsNode.jjtGetNumChildren();
-                for (int i = 0; i < params; i++) {
-                    BSHFormalParameter p = (BSHFormalParameter)m.paramsNode.getChild(i);
-                    SimpleNode type_node = ((BSHType)p.getChild(0)).getTypeNode();
-                    String param_name = p.name;
-
-                    if (type_node instanceof BSHAmbiguousName) {
-                        String param_type = ((BSHAmbiguousName)type_node).text;
-                        String default_val = "null";
-
-                        if (param_type.equals("Color") || param_type.endsWith(".Color")) {
-                            default_val = "Color.RED";
-                        } else if (param_type.equals("Graphics2D")) {
-                            default_val = "g";
-                        }
-
-                        invocation.append(default_val);
-                    } else if (type_node instanceof BSHPrimitiveType) {
-                        Class real_type = ((BSHPrimitiveType)type_node).getType();
-
-                        if (real_type == int.class) {
-                            int default_val = 10;
-
-                            // we'll probably want to stir these around a bit
-                            if (param_name.equals("x")) {
-                                default_val = 100;
-                            } else if (param_name.equals("y")) {
-                                default_val = 100;
-                            } else if (param_name.equals("radius")) {
-                                default_val = 50;
-                            } else if (param_name.equals("side")) {
-                                default_val = 100;
-                            } else if (param_name.equals("size")) {
-                                default_val = 100;
-                            }
-
-                            invocation.append(default_val);
-                        }
-                    }
-
-                    if (i < params-1) {
-                        invocation.append(", ");
-                    }
-                }
-
-                invocation.append(");\n");
-
-                pad.insertAtMarker(render_end_marker_idx, invocation.toString(), true);
-
-                updatePadState();
-            } catch (PadException e) {
-                e.printStackTrace();
-            }
-        }
-    }
-
     public void mouseClicked(MouseEvent e) {
-        // draw factories
-        {
-            int x = 10;
-            int y = 300;
-            for (AstGlobalMethod m : endpoint_methods) {
-                if (e.getX() >= x && e.getX() < x+70 && e.getY() >= y && e.getY() < y+50) {
-                    addToRender(m);
-                }
-                x += 104;
-            }
-        }
-
     }
 
     public void mouseEntered(MouseEvent e) {
@@ -403,15 +293,19 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     }
 
     public void mousePressed(MouseEvent e) {
+        input_queue.add(new AstUI.MouseEvent(Region.PRESS, e.getX(), e.getY()));
     }
 
     public void mouseReleased(MouseEvent e) {
+        input_queue.add(new AstUI.MouseEvent(Region.RELEASE, e.getX(), e.getY()));
     }
 
     public void mouseMoved(MouseEvent e) {
+        input_queue.add(new AstUI.MouseEvent(Region.MOVE, e.getX(), e.getY()));
     }
 
     public void mouseDragged(MouseEvent e) {
+        input_queue.add(new AstUI.MouseEvent(Region.DRAG, e.getX(), e.getY()));
     }
 
     public void keyPressed(KeyEvent e) {
@@ -421,107 +315,6 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     }
 
     public void keyTyped(KeyEvent e) {
-    }
-
-    Boxy findBoxy(int start_pos, int end_pos) {
-        for (Boxy b : boxes) {
-            Marker start_marker = markers[b.start_marker_idx];
-            Marker end_marker = markers[b.end_marker_idx];
-
-            if (start_marker.valid && end_marker.valid && start_marker.pos == start_pos && end_marker.pos == end_pos) {
-                return b;
-            }
-        }
-
-        return null;
-    }
-
-    void collectMethods() throws ParseException, PadException {
-        ArrayList<Boxy> new_boxes = new ArrayList<Boxy>();
-        render_method = null;
-
-        endpoint_methods.clear();
-        primitive_methods.clear();
-        object_methods.clear();
-
-        // parse to find all function declarations
-        StringReader sr = new StringReader(code);
-        Parser p = new Parser(sr);
-
-        ArrayList<SimpleNode> decls = new ArrayList<SimpleNode>();
-        AstSearch decl_search = new AstSearch(null, BSHMethodDeclaration.class, null);
-
-        while (!p.Line()) {
-            SimpleNode node = p.popNode();
-
-            decl_search.searchRecurse(node, decls, 0);
-        }
-
-        for (int i = 0; i < decls.size(); i++) {
-            BSHMethodDeclaration method = (BSHMethodDeclaration)decls.get(i);
-            BSHReturnType returnTypeNode = null;
-            BSHFormalParameters paramsNode = null;
-            BSHBlock blockNode = null;
-
-            for (int j = 0; j < method.jjtGetNumChildren(); j++) {
-
-                SimpleNode node = method.getChild(j);
-                if (node instanceof BSHReturnType) {
-                    returnTypeNode = (BSHReturnType)node;
-                } else if (node instanceof BSHFormalParameters) {
-                    paramsNode = (BSHFormalParameters)node;
-                } else if (node instanceof BSHBlock) {
-                    blockNode = (BSHBlock)node;
-                }
-            }
-
-            if (returnTypeNode != null && paramsNode != null && blockNode != null) {
-                if (returnTypeNode.isVoid) {
-                    // no return, we'll assume that this renders something
-
-                    if (method.name.equals("render")) {
-                        int render_end_pos = tokenEnd(blockNode.getLastToken());
-                        // may want to check params as well
-                        render_method = new AstGlobalMethod(method, returnTypeNode, paramsNode, blockNode);
-                        if (render_end_marker_idx == -1) {
-                            render_end_marker_idx = pad.registerMarker(render_end_pos, true, true);
-                        } else {
-                            pad.reregisterMarker(render_end_marker_idx, render_end_pos, true, true);
-                        }
-                    } else {
-                        int start_pos = tokenStart(method.getFirstToken());
-                        int end_pos = tokenEnd(method.getLastToken());
-                        endpoint_methods.add(new AstGlobalMethod(method, returnTypeNode, paramsNode, blockNode));
-
-                        Boxy b = findBoxy(start_pos, end_pos);
-                        if (b != null) {
-                            System.out.println("matched "+b.name+" with "+method.name);
-                            new_boxes.add(new Boxy(b));
-                        } else {
-                            new_boxes.add(new Boxy(method.name, pad.registerMarker(start_pos, true, true), pad.registerMarker(end_pos, false, true)));
-                        }
-                    }
-                } else {
-                    BSHType return_type = returnTypeNode.getTypeNode();
-                    SimpleNode type = return_type.getTypeNode();
-
-                    if (type instanceof BSHPrimitiveType) {
-                        BSHPrimitiveType prim_type = (BSHPrimitiveType)type;
-                        Class real_type = prim_type.getType();
-
-                        primitive_methods.add(new AstGlobalMethod(method, returnTypeNode, paramsNode, blockNode, real_type));
-                    } else if (type instanceof BSHAmbiguousName) {
-                        BSHAmbiguousName name = (BSHAmbiguousName)type;
-
-                        object_methods.add(new AstGlobalMethod(method, returnTypeNode, paramsNode, blockNode, name.text));
-                    }
-                }
-            }
-        }
-
-        updateMarkers();
-        boxes = new_boxes;
-
     }
 
 }

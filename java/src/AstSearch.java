@@ -1,8 +1,9 @@
 // a hopefully small engine for doing searches in a Beanshell AST
 
-package bsh;
-
 import java.util.ArrayList;
+import bsh.SimpleNode;
+import bsh.BSHAmbiguousName;
+import bsh.BSHMethodDeclaration;
 
 class AstSearch {
     private String name;
