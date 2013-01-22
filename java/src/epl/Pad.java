@@ -15,6 +15,8 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.BufferedReader;
 import java.io.OutputStream;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 // class for talking to an Etherpad Lite server about a particular pad
 
@@ -31,6 +33,8 @@ public class Pad {
     }
     private volatile ClientConnectState client_connect_state;
 
+    static final Pattern cursor_chat_regex = Pattern.compile("!cursor!(\\d+)(-(\\d+))?");
+
     // following the documentation (Etherpad and EasySync Technical Manual):
     // []A: server_text (the last known shared revision)
     //   X: sent_changes (changes we have make locally and transmitted that have not been ack'd)
@@ -38,6 +42,7 @@ public class Pad {
     //   V: client_text (our local version)
     private String server_text;
     private long server_rev;
+    private long server_time_offset;
 
     private String client_text;
     private long client_rev;
@@ -52,12 +57,15 @@ public class Pad {
     // remote and local updates
     ArrayList<Marker> markers;
 
+    HashMap<String, Avatar> user_avatars;
+
     private volatile JSONObject client_vars = null; // initial state from the server
 
     private URL url;
     private String session_token;
     private String token;
     private String client_id;
+    private String user_id;
     private String pad_id;
 
     private SocketIO socket = null;
@@ -77,6 +85,7 @@ public class Pad {
 
         this.token = token;
         this.client_id = client_id;
+        this.user_id = null;
         this.pad_id = pad_id;
         this.session_token = session_token;
 
@@ -84,6 +93,7 @@ public class Pad {
 
         server_text = null;
         server_rev = -1;
+        server_time_offset = 0;
         client_text = null;
         client_rev = -1;
 
@@ -93,6 +103,8 @@ public class Pad {
         collabroom_messages = new LinkedList<JSONObject> ();
 
         markers = new ArrayList<Marker> ();
+
+        user_avatars = new HashMap<String, Avatar> ();
     }
 
     // adapted from Etherpad Lite's JS
@@ -319,6 +331,10 @@ public class Pad {
 
         try {
             client_vars = json.getJSONObject("data");
+
+            server_time_offset = client_vars.getLong("serverTimestamp") - System.currentTimeMillis();
+            user_id = client_vars.getString("userId");
+
             JSONObject collab_client_vars = client_vars.getJSONObject("collab_client_vars");
 
             server_text = collab_client_vars.getJSONObject("initialAttributedText").getString("text");
@@ -327,11 +343,18 @@ public class Pad {
             client_text = server_text;
             client_rev = server_rev;
 
+            // process chat history
+            JSONArray chat_history = client_vars.getJSONArray("chatHistory");
+            for (int i = 0; i < chat_history.length(); i++) {
+                JSONObject chat_entry = chat_history.getJSONObject(i);
+                handleChat(chat_entry.getString("text"), chat_entry.getString("userId"), chat_entry.optString("userName", null), chat_entry.getLong("time"));
+            }
+
             pending_changes = sent_changes = Changeset.identity(server_text.length());
 
             client_connect_state = ClientConnectState.GOT_VARS;
         } catch (JSONException e) {
-            throw new PadException("exception getting CLIENT_VARS data");
+            throw new PadException("exception getting CLIENT_VARS data", e);
         }
     }
 
@@ -389,6 +412,7 @@ public class Pad {
     // herein is to remain accurate
     public synchronized TextState getState() {
         Marker[] client_markers = new Marker[markers.size()];
+        Avatar[] avatars = new Avatar[user_avatars.size()];
         
         client_markers = markers.toArray(client_markers);
         return new TextState(server_text, server_rev, client_text, client_rev, client_markers);
@@ -449,6 +473,7 @@ public class Pad {
             long new_rev;
             long time_delta = 0;
             String cs_str;
+            String author;
 
             try {
                 // This is the heart of the protocol, notation here is from
@@ -462,6 +487,7 @@ public class Pad {
                     if (!data.isNull("timeDelta")) {
                         time_delta = data.getLong("timeDelta");
                     }
+                    author = data.getString("author");
                 } catch (JSONException e) {
                     throw new PadException("error updating from NEW_CHANGES", e);
                 }
@@ -511,6 +537,17 @@ public class Pad {
                     client_text = D.applyToText(client_text);
                     translateMarkers(D);
 
+                    // make sure there's a cursor for the editing user
+                    if (user_avatars.get(author) == null) {
+                        Avatar av = new Avatar(user_id);
+                        user_avatars.put(author, av);
+                        av.setPos(0,0,0);
+                    }
+                    for (Iterator<Avatar> i = user_avatars.values().iterator(); i.hasNext(); ) {
+                        Avatar a = i.next();
+                        a.adjustForChangeset(author, D, new_time - server_time_offset);
+                    }
+
                     has_new = true;
                 }
 
@@ -519,6 +556,7 @@ public class Pad {
                 if (!server_would_see.equals(client_text)) {
                     throw new PadException("out of sync, server would see\n'" + server_would_see + "'\nclient sees\n'" + client_text + "'\n");
                 }
+
             } catch (ChangesetException e) {
                 throw new PadException("NEW_CHANGES broke", e);
             }
@@ -556,16 +594,130 @@ public class Pad {
             // the acceptance should not introduce any new data to the client
             //has_new = true;
         } else if ("USER_NEWINFO".equals(collab_type)) {
-            // ignore this for now
+            // a user joins or updates status
+
+            JSONObject user_info;
+            String user_id;
+
+            try {
+                user_info = data.getJSONObject("userInfo");
+                user_id = user_info.getString("userId");
+            } catch (JSONException e) {
+                throw new PadException("bad USER_NEWINFO", e);
+            }
+
+            Avatar avatar = user_avatars.get(user_id);
+
+            if (avatar == null) {
+                avatar = new Avatar(user_id);
+                user_avatars.put(user_id, avatar);
+            }
+
+            try {
+                String user_name;
+                String color_id;
+                String user_agent;
+                String address;
+
+                if (user_info.isNull("name")) {
+                    avatar.setUserName(null);
+                } else {
+                    avatar.setUserName(user_info.getString("name"));
+                }
+
+                int color_num = user_info.optInt("colorId", -1);
+                if (color_num != -1) {
+                    color_id = client_vars.getJSONArray("colorPalette").optString(color_num);
+                } else {
+                    color_id = user_info.optString("colorId");
+                }
+                avatar.setColor(color_id);
+
+                // don't consider cursor stuff "new"
+                //has_new = true;
+
+            } catch (JSONException e) {
+                throw new PadException("bad/missing data in USER_NEWINFO", e);
+            }
 
         } else if ("USER_LEAVE".equals(collab_type)) {
-            // ignore this for now
+            // a user leaves
+            JSONObject user_info;
+            String user_id;
+
+            try {
+                user_info = data.getJSONObject("userInfo");
+                user_id = user_info.getString("userId");
+            } catch (JSONException e) {
+                throw new PadException("bad/missing userId in USER_LEAVE", e);
+            }
+
+            if (user_avatars.remove(user_id) != null) {
+                // don't consider cursor stuff "new"
+                //has_new = true;
+            }
+
+        } else if ("CHAT_MESSAGE".equals(collab_type)) {
+            // message from a user
+            try {
+                if (handleChat(data.getString("text"), data.getString("userId"), data.optString("userName", null), data.getLong("time"))) {
+                    // don't consider cursor stuff "new"
+                    //has_new = true;
+                }
+            } catch (JSONException e) {
+                throw new PadException("bad/missing data in CHAT_MESSAGE", e);
+            }
 
         } else {
             System.out.println("unsupported COLLABROOM message type = " + collab_type);
         }
 
         return has_new;
+    }
+
+    // only call when synchronized
+    // return true if we've processed this message
+    private boolean handleChat(String text, String user_id, String user_name, long time) {
+        Matcher m = cursor_chat_regex.matcher(text);
+        if (m.find()) {
+            String start_pos_str = m.group(1);
+            String end_pos_str = m.group(3);
+
+            int start_pos = Integer.parseInt(start_pos_str);
+            int end_pos = start_pos-1;
+
+            System.out.println("" + start_pos_str + "," + end_pos_str);
+
+            if (end_pos_str != null) {
+                end_pos = Integer.parseInt(end_pos_str);
+            }
+
+            Avatar av = user_avatars.get(user_id);
+
+            if (av == null) {
+                av = new Avatar(user_id);
+                user_avatars.put(user_id, av);
+            }
+
+            if (user_name != null) {
+                av.setUserName(user_name);
+            }
+
+            if (start_pos > client_text.length()) {
+                start_pos = client_text.length();
+            }
+            if (end_pos > client_text.length()) {
+                end_pos = client_text.length();
+            }
+            av.setPos(start_pos, end_pos, time - server_time_offset);
+
+            return true;
+
+        } else {
+            System.out.println("ignoring chat message \""+text+"\" from "+user_id);
+
+            return false;
+        }
     }
 
     // ********** Marker manipulation
@@ -724,6 +876,38 @@ public class Pad {
         }
     }
 
+    public Avatar[] getCursors() {
+        synchronized (user_avatars) {
+            Avatar[] avatars = new Avatar[user_avatars.size()];
+            return user_avatars.values().toArray(avatars);
+        }
+    }
+
+    public synchronized void broadcastCursor(int start_pos, int end_pos) throws PadException {
+        JSONObject chat_message;
+        final StringBuilder text_sb = new StringBuilder("!cursor!");
+        text_sb.append(start_pos);
+        if (start_pos != end_pos ) {
+            text_sb.append('-');
+            text_sb.append(end_pos);
+        }
+
+        try {
+            chat_message = new JSONObject() {{
+                put("component", "pad");
+                put("type", "COLLABROOM");
+                put("data", new JSONObject() {{
+                    put("type", "CHAT_MESSAGE");
+                    put("text", text_sb.toString());
+                }});
+            }};
+        } catch (JSONException e) {
+            throw new PadException("failed building CHAT_MESSAGE JSON", e);
+        }
+
+        socket.send(null, chat_message);
+    }
+
     // ********* private changeset application
 
     // only call when synchronized!
@@ -732,5 +916,11 @@ public class Pad {
 
         client_text = changeset.applyToText(client_text);
         translateMarkers(changeset);
+
+        for (Iterator<Avatar> i = user_avatars.values().iterator(); i.hasNext(); ) {
+            Avatar a = i.next();
+            // cheating the time here to force it through
+            a.adjustForChangeset(user_id, changeset, a.getTime());
+        }
     }
 }

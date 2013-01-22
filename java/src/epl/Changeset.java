@@ -247,7 +247,7 @@ public class Changeset {
         }
     }
 
-    static class OpIterator implements Iterator {
+    static class OpIterator implements Iterator<Operation> {
         private String opstring;
         private int curIndex;
 
@@ -305,7 +305,7 @@ public class Changeset {
             return (regexResult != null);
         }
 
-        public Object next() {
+        public Operation next() {
             Operation o = regexResult;
             
             regexResult = null;
@@ -336,7 +336,7 @@ public class Changeset {
         int bank_cur = 0;
 
         for (OpIterator oi = opIterator(); oi.hasNext(); ) {
-            Operation o = (Operation) oi.next();
+            Operation o = oi.next();
 
             switch (o.opcode) {
                 case '=':
@@ -364,7 +364,7 @@ public class Changeset {
         int new_pos = 0;
 
         for (OpIterator i = opIterator(); i.hasNext(); ) {
-            Operation o = (Operation) i.next();
+            Operation o = i.next();
             int old_next_pos;
             int new_next_pos;
 
@@ -408,6 +408,23 @@ public class Changeset {
         // if we got here we're retained
         if (new_pos == old_pos) return marker;
         return new Marker(marker.pos + new_pos - old_pos, marker.before, true);
+    }
+
+    public Marker afterThisEdit() {
+        int pos = 0;
+
+        for (OpIterator i = opIterator(); i.hasNext(); ) {
+            Operation o = i.next();
+            switch (o.opcode) {
+            case '+':
+            case '=':
+                pos += o.chars;
+                break;
+            }
+        }
+
+        // before the first auto-retained character (possibly final newline)
+        return new Marker(pos, true, true);
     }
 
     /**
@@ -688,7 +705,7 @@ public class Changeset {
         int bank_cur = 0;
 
         for (OpIterator oi = opIterator(); oi.hasNext(); ) {
-            Operation o = (Operation) oi.next();
+            Operation o = oi.next();
             sb.append('\n');
             sb.append(o.explain(charBank, bank_cur));
 
@@ -1001,8 +1018,8 @@ public class Changeset {
             MutableOperation op2 = new MutableOperation();
 
             while (op1.isValid() || iter1.hasNext() || op2.isValid() || iter2.hasNext()) {
-                if (!op1.isValid() && iter1.hasNext()) op1.gets((Operation)iter1.next());
-                if (!op2.isValid() && iter2.hasNext()) op2.gets((Operation)iter2.next());
+                if (!op1.isValid() && iter1.hasNext()) op1.gets(iter1.next());
+                if (!op2.isValid() && iter2.hasNext()) op2.gets(iter2.next());
 
                 Operation opOut = func_interface.func(op1, op2);
 

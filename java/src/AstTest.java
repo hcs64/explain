@@ -15,6 +15,7 @@ import epl.Pad;
 import epl.PadException;
 import epl.TextState;
 import epl.Marker;
+import epl.Avatar;
 
 import bsh.Interpreter;
 import bsh.EvalError;
@@ -24,6 +25,9 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     boolean animating = false;
     boolean should_send = true;
     boolean should_recv = true;
+    
+    int click_pos = 0;
+    boolean click_flag = false;
 
     public interface Renderable {
         public void render(graphics.Graphics g, long t);
@@ -53,6 +57,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     Pad pad;
 
     Marker[] markers;
+    Avatar[] avatars;
 
     long start_time;
 
@@ -139,11 +144,13 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
 
         new_code = new_state.client_text;
         markers = new_state.client_markers;
+        avatars = pad.getCursors();
     }
 
     public void updateMarkers() {
         TextState new_state = pad.getState();
         markers = new_state.client_markers;
+        avatars = pad.getCursors();
     }
 
     public void update(Graphics g) {
@@ -160,6 +167,15 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
             }
         }
         edit_requests.clear();
+
+        if (click_flag) {
+            try {pad.broadcastCursor(click_pos,click_pos+5);}
+            catch (PadException e) {
+                e.printStackTrace();
+            }
+            click_flag = false;
+            click_pos ++;
+        } 
 
         // 3. update
         try {
@@ -188,6 +204,17 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
                 // 5. regenerate UI
                 ui.generateUI(code, pad, markers);
                 updateMarkers();
+
+                // put avatars where we think they go
+                for (Avatar a : avatars) {
+                    System.out.println("Avatar for " + a.getUserId());
+                    Marker start = a.getStartMarker();
+                    Marker end = a.getEndMarker();
+
+                    try {
+                        System.out.println(code.substring(0,start.pos)+"***["+code.substring(start.pos,end.pos)+"]***"+code.substring(end.pos,code.length()));
+                    } catch (IndexOutOfBoundsException e) {}
+                }
 
             } catch (EvalError e) {
                 System.out.println("eval error "+e.toString()+", not accepting new code:\n" + new_code);
@@ -284,6 +311,7 @@ public class AstTest extends java.applet.Applet implements Runnable, MouseListen
     }
 
     public void mouseClicked(MouseEvent e) {
+        click_flag = true;
     }
 
     public void mouseEntered(MouseEvent e) {
