@@ -1352,7 +1352,6 @@ public class NameSpace implements Serializable, BshClassManager.Listener, NameSo
 		importPackage("java.util");
 		importPackage("java.io");
 		importPackage("java.lang");
-		importCommands("/bsh/commands");
     }
 
 	/**

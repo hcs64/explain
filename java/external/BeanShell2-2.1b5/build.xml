@@ -199,7 +199,6 @@
 			destdir="${build-dir}"
 			deprecation="${deprecation}"
 			optimize="on"
-			debug="on"
 			includes="**/*.java"
 			excludes="${excludes},**/bak/**"
 			source="1.5"
