@@ -114,6 +114,7 @@ function addSimRenderer(backend, renderCanvasId, width, height) {
     var renderContext;
     var animationStartTime;
     var lastFrameTime;
+    var firstFrameAnimateFcn;
     var animateFcn;
     var mouseCallbacks;
     var i, cb;
@@ -127,8 +128,13 @@ function addSimRenderer(backend, renderCanvasId, width, height) {
     canvasElement.height= height;
     renderContext = canvasElement.getContext("2d");
 
-    animationStartTime = Date.now();
-    lastFrameTime = animationStartTime;
+    firstFrameAnimateFcn = function (time) {
+        animationStartTime = time;
+        lastFrameTime = time;
+
+        window.requestAnimationFrame(animateFcn);
+    };
+
     animateFcn = function (time) {
         var dt = time-lastFrameTime;
 
@@ -151,7 +157,7 @@ function addSimRenderer(backend, renderCanvasId, width, height) {
 
     initMouseEvents(canvasElement, mouseCallbacks);
 
-    window.requestAnimationFrame(animateFcn);
+    window.requestAnimationFrame(firstFrameAnimateFcn);
 }
 
 // bounding boxes, only to be used in pixel-space
